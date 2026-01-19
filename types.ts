@@ -23,6 +23,7 @@ export interface Player {
   teamId?: string;
   isSold: boolean;
   photoUrl?: string;
+  gameIds?: string;
 }
 
 export interface Team {

@@ -15,7 +15,22 @@ export interface Game {
   pointsThird: number;
 }
 
-type View = 'dashboard' | 'auction' | 'teams' | 'players' | 'games' | 'standings';
+export interface Match {
+  id: string;
+  gameId: string;
+  teamAId: string;
+  teamBId: string;
+  winnerId?: string | 'draw';
+  scoreA?: number;
+  scoreB?: number;
+  status: 'scheduled' | 'completed';
+  stage: 'league' | 'semi-final' | 'final';
+  game?: Game;
+  teamA?: Team;
+  teamB?: Team;
+}
+
+type View = 'dashboard' | 'auction' | 'teams' | 'players' | 'games' | 'standings' | 'fixtures' | 'roadmap';
 
 const App: React.FC = () => {
   // Auth State
@@ -37,6 +52,7 @@ const App: React.FC = () => {
   const [teams, setTeams] = useState<Team[]>([]);
   const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
   const [games, setGames] = useState<Game[]>([]);
+  const [matches, setMatches] = useState<Match[]>([]);
 
   // Auction Logic State
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
@@ -48,6 +64,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [message, setMessage] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('');
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
 
   // Auto-hide message
@@ -71,25 +88,31 @@ const App: React.FC = () => {
     winnerId: '' // 'draw' or teamId
   });
 
+  const [recordingMatchId, setRecordingMatchId] = useState<string | null>(null);
+  const [selectedRoadmapGameId, setSelectedRoadmapGameId] = useState<string>('');
+  const [isPublicView, setIsPublicView] = useState(false);
+
   // Initial Data Fetch
   useEffect(() => {
-    if (isLoggedIn) {
+    if (isLoggedIn || isPublicView) {
       fetchData();
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, isPublicView]);
 
   const fetchData = async () => {
     try {
-      const [cfg, tms, plys, gms] = await Promise.all([
+      const [cfg, tms, plys, gms, mData] = await Promise.all([
         api.getConfig(),
         api.getTeams(),
         api.getPlayers(),
-        api.getGames()
+        api.getGames(),
+        fetch('http://localhost:5001/api/matches').then(r => r.json())
       ]);
       setConfig(cfg || DEFAULT_CONFIG);
       setTeams(tms);
       setAvailablePlayers(plys);
       setGames(gms);
+      setMatches(Array.isArray(mData) ? mData : []);
     } catch (err) {
       console.error("Failed to fetch data", err);
       setMessage("Error connecting to backend!");
@@ -322,10 +345,14 @@ const App: React.FC = () => {
     ? availablePlayers.find(p => p.id === selectedPlayerId)
     : availablePlayers.filter(p => !p.isSold)[currentPlayerIndex];
 
-  if (!isLoggedIn) {
+  if (!isLoggedIn && !isPublicView) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden">
+        {/* Background Blobs */}
+        <div className="absolute top-0 -left-20 w-96 h-96 bg-indigo-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-20 animate-pulse"></div>
+        <div className="absolute bottom-0 -right-20 w-96 h-96 bg-purple-600 rounded-full mix-blend-multiply filter blur-[120px] opacity-20 animate-pulse delay-700"></div>
+
+        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative z-10">
           <div className="text-center mb-10">
             <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-3xl shadow-lg shadow-indigo-500/20">🏆</div>
             <h1 className="text-2xl font-black text-white">Auction Admin Login</h1>
@@ -341,6 +368,19 @@ const App: React.FC = () => {
             {loginError && <p className="text-red-400 text-xs text-center font-bold">{loginError}</p>}
             <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-indigo-900/40 transition-all uppercase tracking-widest mt-4">Enter Dashboard</button>
           </form>
+
+          <div className="mt-8 pt-8 border-t border-slate-800/50 text-center">
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-4">Or View Public Stats</p>
+            <button
+              onClick={() => {
+                setIsPublicView(true);
+                setActiveView('standings');
+              }}
+              className="w-full bg-slate-800 hover:bg-slate-700 text-indigo-400 font-black py-4 rounded-xl transition-all uppercase tracking-widest text-xs border border-slate-700"
+            >
+              View Points Table
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -370,48 +410,78 @@ const App: React.FC = () => {
             {
               id: 'auction',
               label: 'Live Auction',
+              adminOnly: true,
               icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
             },
             {
               id: 'teams',
               label: 'Teams',
+              adminOnly: true,
               icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
             },
             {
               id: 'players',
               label: 'Players',
+              adminOnly: true,
               icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
             },
             {
               id: 'games',
               label: 'Games',
+              adminOnly: true,
               icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+            },
+            {
+              id: 'fixtures',
+              label: 'Fixtures',
+              icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
             },
             {
               id: 'standings',
               label: 'Points Table',
               icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
             },
-          ].map(item => (
-            <button
-              key={item.id}
-              onClick={() => setActiveView(item.id as View)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm ${activeView === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
-            >
-              <span>{item.icon}</span> {item.label}
-            </button>
-          ))}
+            {
+              id: 'roadmap',
+              label: 'Roadmap',
+              icon: <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A2 2 0 013 15.483V6.517a2 2 0 011.553-1.943L12 2l7.447 2.574A2 2 0 0121 6.517v8.966a2 2 0 01-1.553 1.943L15 20l-3-1-3 1z"></path></svg>
+            },
+          ]
+            .filter(item => !item.adminOnly || isLoggedIn)
+            .map(item => (
+              <button
+                key={item.id}
+                onClick={() => setActiveView(item.id as View)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm ${activeView === item.id ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}
+              >
+                <span>{item.icon}</span> {item.label}
+              </button>
+            ))}
         </nav>
 
         <div className="p-4 border-t border-slate-800">
-          <button onClick={() => setIsSettingsOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white transition-all font-bold text-sm">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-            Settings
-          </button>
-          <button onClick={() => { setIsLoggedIn(false); localStorage.removeItem('authToken'); }} className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 transition-all font-bold text-sm mt-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
-            Logout
-          </button>
+          {isLoggedIn ? (
+            <>
+              <button onClick={() => setIsSettingsOpen(true)} className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:text-white transition-all font-bold text-sm">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                Settings
+              </button>
+              <button onClick={() => { setIsLoggedIn(false); localStorage.removeItem('authToken'); }} className="w-full flex items-center gap-3 px-4 py-3 text-red-400 hover:text-red-300 transition-all font-bold text-sm mt-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                Logout
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => {
+                setIsPublicView(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-indigo-400 hover:text-indigo-300 transition-all font-bold text-sm"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+              Admin Login
+            </button>
+          )}
         </div>
       </aside>
 
@@ -473,23 +543,44 @@ const App: React.FC = () => {
                     )}
                   </div>
                 </div>
-                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
-                  <h3 className="text-lg font-black mb-6 text-white">Quick Actions</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => setActiveView('auction')} className="p-4 bg-indigo-600/10 border border-indigo-500/30 rounded-2xl hover:bg-indigo-600/20 transition-all text-left group">
-                      <span className="text-xl block mb-2 group-hover:scale-110 transition-transform">⚡</span>
-                      <p className="font-bold text-indigo-400 text-sm">Start Auction</p>
-                    </button>
-                    <button onClick={() => setIsSettingsOpen(true)} className="p-4 bg-slate-800/50 border border-slate-700 rounded-2xl hover:bg-slate-800 transition-all text-left">
-                      <span className="text-xl block mb-2">⚙️</span>
-                      <p className="font-bold text-slate-400 text-sm">Configure Rules</p>
-                    </button>
-                    <button onClick={() => api.resetAuction(true).then(() => { fetchData(); setMessage("Reset & Seeded!"); })} className="p-4 bg-red-600/10 border border-red-500/30 rounded-2xl hover:bg-red-600/20 transition-all text-left group">
-                      <span className="text-xl block mb-2 group-hover:scale-110 transition-transform">🔄</span>
-                      <p className="font-bold text-red-400 text-sm">Reset & Seed</p>
-                    </button>
+                {isLoggedIn && (
+                  <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6">
+                    <h3 className="text-lg font-black mb-6 text-white">Quick Actions</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <button onClick={() => setActiveView('auction')} className="p-4 bg-indigo-600/10 border border-indigo-500/30 rounded-2xl hover:bg-indigo-600/20 transition-all text-left group">
+                        <span className="text-xl block mb-2 group-hover:scale-110 transition-transform">⚡</span>
+                        <p className="font-bold text-indigo-400 text-sm">Start Auction</p>
+                      </button>
+                      <button onClick={() => setIsSettingsOpen(true)} className="p-4 bg-slate-800/50 border border-slate-700 rounded-2xl hover:bg-slate-800 transition-all text-left">
+                        <span className="text-xl block mb-2">⚙️</span>
+                        <p className="font-bold text-slate-400 text-sm">Configure Rules</p>
+                      </button>
+                      <button onClick={() => api.resetAuction(true).then(() => { fetchData(); setMessage("Reset & Seeded!"); })} className="p-4 bg-red-600/10 border border-red-500/30 rounded-2xl hover:bg-red-600/20 transition-all text-left group">
+                        <span className="text-xl block mb-2 group-hover:scale-110 transition-transform">🔄</span>
+                        <p className="font-bold text-red-400 text-sm">Reset & Seed</p>
+                      </button>
+                      {import.meta.env.VITE_ENVIRONMENT === 'local' && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const res = await fetch('http://localhost:5001/api/simulate/auction', { method: 'POST' });
+                              if (res.ok) {
+                                await fetchData();
+                                setMessage("Auction Simulated!");
+                              }
+                            } catch (err) {
+                              setMessage("Simulation Failed");
+                            }
+                          }}
+                          className="p-4 bg-emerald-600/10 border border-emerald-500/30 rounded-2xl hover:bg-emerald-600/20 transition-all text-left group"
+                        >
+                          <span className="text-xl block mb-2 group-hover:scale-110 transition-transform">🤖</span>
+                          <p className="font-bold text-emerald-400 text-sm">Simulate Auction</p>
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
           )}
@@ -548,12 +639,12 @@ const App: React.FC = () => {
                 {/* STADIUM CENTER STAGE (Left 5/12) */}
                 <div className="col-span-5 flex flex-col min-h-0">
                   {currentPlayer && !currentPlayer.isSold ? (
-                    <div className={`flex - 1 relative overflow - hidden bg - slate - 900 border - 2 rounded - [2.5rem] p - 8 shadow - 2xl flex flex - col justify - center transition - all duration - 500 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'border-amber-500/30 ring-4 ring-amber-500/5' : 'border-indigo-500/30 ring-4 ring-indigo-500/5'} `}>
-                      <div className={`absolute top - 0 right - 0 w - 48 h - 48 blur - [80px] - mr - 24 - mt - 24 rounded - full opacity - 30 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'bg-amber-400' : 'bg-indigo-400'} `}></div>
+                    <div className={`flex-1 relative overflow-hidden bg-slate-900 border-2 rounded-[2.5rem] p-8 shadow-2xl flex flex-col justify-center transition-all duration-500 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'border-amber-500/30 ring-4 ring-amber-500/5' : 'border-indigo-500/30 ring-4 ring-indigo-500/5'}`}>
+                      <div className={`absolute top-0 right-0 w-48 h-48 blur-[80px] -mr-24 -mt-24 rounded-full opacity-30 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'bg-amber-400' : 'bg-indigo-400'}`}></div>
 
                       <div className="flex flex-col items-center text-center relative z-10">
-                        <div className={`w - 32 h - 32 md: w - 44 md: h - 44 rounded - full border - [6px] p - 1 flex items - center justify - center relative mb - 6 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'border-amber-500/20' : 'border-indigo-500/20'} `}>
-                          <div className={`w - full h - full rounded - full flex items - center justify - center bg - slate - 800 text - 6xl md: text - 7xl font - black ${currentPlayer.category === PlayerCategory.PREMIUM ? 'text-amber-500' : 'text-slate-500'} `}>
+                        <div className={`w-32 h-32 md:w-44 md:h-44 rounded-full border-[6px] p-1 flex items-center justify-center relative mb-6 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'border-amber-500/20' : 'border-indigo-500/20'}`}>
+                          <div className={`w-full h-full rounded-full flex items-center justify-center bg-slate-800 text-6xl md:text-7xl font-black ${currentPlayer.category === PlayerCategory.PREMIUM ? 'text-amber-500' : 'text-slate-500'}`}>
                             {currentPlayer.name[0]}
                           </div>
                           <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-red-600 text-white px-3 py-0.5 rounded-full text-[9px] font-black tracking-widest uppercase flex items-center gap-1 border-2 border-slate-900 shadow-xl">
@@ -562,7 +653,7 @@ const App: React.FC = () => {
                         </div>
 
                         <div className="mb-6">
-                          <span className={`inline - block px - 3 py - 1 rounded - lg text - [10px] font - black tracking - widest uppercase mb - 2 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'} `}>
+                          <span className={`inline-block px-3 py-1 rounded-lg text-[10px] font-black tracking-widest uppercase mb-2 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-slate-800 text-slate-400 border border-slate-700'}`}>
                             {currentPlayer.category} • {currentPlayer.gender} • {currentPlayer.position || 'N/A'}
                           </span>
                           <h2 className="text-4xl md:text-5xl font-black text-white tracking-tighter leading-none truncate w-full max-w-full">{currentPlayer.name}</h2>
@@ -617,15 +708,15 @@ const App: React.FC = () => {
                     const femaleCount = team.players.filter(p => p.gender === Gender.FEMALE).length;
 
                     return (
-                      <div key={team.id} className={`flex flex - col rounded - [2.2rem] border transition - all duration - 300 min - h - 0 overflow - hidden ${isLeader ? 'bg-indigo-600/10 border-indigo-500 ring-4 ring-indigo-500/10' : 'bg-slate-900/50 border-slate-800'} `}>
+                      <div key={team.id} className={`flex flex-col rounded-[2.2rem] border transition-all duration-300 min-h-0 overflow-hidden ${isLeader ? 'bg-indigo-600/10 border-indigo-500 ring-4 ring-indigo-500/10' : 'bg-slate-900/50 border-slate-800'}`}>
                         {/* Team Header */}
                         <div className="p-4 bg-slate-950/20 border-b border-white/5 flex justify-between items-center shrink-0">
                           <div className="overflow-hidden">
                             <h4 className="font-black text-white text-sm tracking-tight mb-1 truncate">{team.name}</h4>
                             <div className="flex items-center gap-2">
                               <div className="flex gap-1">
-                                <span className={`text - [8px] px - 1.5 py - 0.5 rounded font - black ${premiumCount >= config.minPremium ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'} `}>P:{premiumCount}/{config.minPremium}</span>
-                                <span className={`text - [8px] px - 1.5 py - 0.5 rounded font - black ${femaleCount >= config.minFemale ? 'bg-emerald-500/20 text-emerald-400' : 'bg-pink-500/20 text-pink-400'} `}>F:{femaleCount}/{config.minFemale}</span>
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded font-black ${premiumCount >= config.minPremium ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>P:{premiumCount}/{config.minPremium}</span>
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded font-black ${femaleCount >= config.minFemale ? 'bg-emerald-500/20 text-emerald-400' : 'bg-pink-500/20 text-pink-400'}`}>F:{femaleCount}/{config.minFemale}</span>
                               </div>
                               <span className="text-[9px] text-slate-500 font-bold shrink-0">{team.players.length}/{config.squadSize}</span>
                             </div>
@@ -705,6 +796,43 @@ const App: React.FC = () => {
                   <p className="text-slate-500 text-sm mt-1">{teams.length} of {config.maxTeams} slots filled</p>
                 </div>
                 <div className="flex items-center gap-3">
+                  {import.meta.env.VITE_ENVIRONMENT === 'local' && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('http://localhost:5001/api/seed/teams', { method: 'POST' });
+                            if (res.ok) {
+                              await fetchData();
+                              setMessage("Sample Teams Seeded!");
+                            }
+                          } catch (err) {
+                            setMessage("Seeding Failed");
+                          }
+                        }}
+                        className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 px-6 py-2 rounded-xl font-bold transition-all"
+                      >
+                        Seed Sample Teams
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm("Are you sure you want to clear ALL teams? This cannot be undone.")) return;
+                          try {
+                            const res = await fetch('http://localhost:5001/api/teams/clear', { method: 'DELETE' });
+                            if (res.ok) {
+                              await fetchData();
+                              setMessage("All Teams Cleared!");
+                            }
+                          } catch (err) {
+                            setMessage("Clear Failed");
+                          }
+                        }}
+                        className="bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 px-6 py-2 rounded-xl font-bold transition-all"
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  )}
                   <input type="text" placeholder="New Team Name" className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 text-white outline-none focus:ring-2 focus:ring-indigo-500" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} />
                   <button onClick={addTeam} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2 rounded-xl font-bold transition-all shadow-lg shadow-indigo-900/40">Add Team</button>
                 </div>
@@ -741,7 +869,58 @@ const App: React.FC = () => {
                   <h2 className="text-3xl font-black text-white">Player Roster</h2>
                   <p className="text-slate-500 text-sm mt-1">{availablePlayers.length} total participants</p>
                 </div>
-                <ImportPlayers onImport={handleImport} />
+                <div className="flex items-center gap-4 flex-1 max-w-xl mx-8">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      placeholder="Search roster..."
+                      className="w-full bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 pl-10 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
+                      value={playerSearchQuery}
+                      onChange={e => setPlayerSearchQuery(e.target.value)}
+                    />
+                    <span className="absolute left-3 top-2.5 text-slate-500">🔍</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {import.meta.env.VITE_ENVIRONMENT === 'local' && (
+                    <>
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch('http://localhost:5001/api/seed/players', { method: 'POST' });
+                            if (res.ok) {
+                              await fetchData();
+                              setMessage("Sample Players Seeded!");
+                            }
+                          } catch (err) {
+                            setMessage("Seeding Failed");
+                          }
+                        }}
+                        className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 px-6 py-2 rounded-xl font-bold transition-all"
+                      >
+                        Seed Sample Players
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm("Are you sure you want to clear ALL players? This cannot be undone.")) return;
+                          try {
+                            const res = await fetch('http://localhost:5001/api/players/clear', { method: 'DELETE' });
+                            if (res.ok) {
+                              await fetchData();
+                              setMessage("All Players Cleared!");
+                            }
+                          } catch (err) {
+                            setMessage("Clear Failed");
+                          }
+                        }}
+                        className="bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 px-6 py-2 rounded-xl font-bold transition-all"
+                      >
+                        Clear All
+                      </button>
+                    </>
+                  )}
+                  <ImportPlayers onImport={handleImport} />
+                </div>
               </div>
 
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
@@ -759,6 +938,32 @@ const App: React.FC = () => {
                     <option value={Gender.MALE}>Male</option>
                     <option value={Gender.FEMALE}>Female</option>
                   </select>
+
+                  <div className="flex-1 min-w-[200px] bg-slate-800 border border-slate-700 rounded-xl p-3">
+                    <p className="text-[9px] font-black text-slate-500 uppercase mb-2">Participating Games</p>
+                    <div className="flex flex-wrap gap-2">
+                      {games.map(g => (
+                        <button
+                          key={g.id}
+                          onClick={() => {
+                            const currentIds = (newPlayer.gameIds || '').split(',').filter(id => id);
+                            const updatedIds = currentIds.includes(g.id)
+                              ? currentIds.filter(id => id !== g.id)
+                              : [...currentIds, g.id];
+                            setNewPlayer({ ...newPlayer, gameIds: updatedIds.join(',') });
+                          }}
+                          className={`px-3 py-1 rounded-lg text-[10px] font-bold transition-all ${(newPlayer.gameIds || '').split(',').includes(g.id)
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                            }`}
+                        >
+                          {g.name}
+                        </button>
+                      ))}
+                      {games.length === 0 && <p className="text-[10px] text-slate-500 italic">No games added yet</p>}
+                    </div>
+                  </div>
+
                   <button onClick={addPlayerManually} className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl px-8 py-3 transition-all uppercase tracking-widest text-xs">Add Player</button>
                 </div>
               </div>
@@ -772,36 +977,55 @@ const App: React.FC = () => {
                       <th className="px-6 py-4">Category</th>
                       <th className="px-6 py-4">Gender</th>
                       <th className="px-6 py-4">Position</th>
+                      <th className="px-6 py-4">Games</th>
                       <th className="px-6 py-4">Base Price</th>
                       <th className="px-6 py-4">Status</th>
                       <th className="px-6 py-4">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
-                    {availablePlayers.map(p => (
-                      <tr key={p.id} className="hover:bg-slate-800/20 transition-colors">
-                        <td className="px-6 py-4 text-sm font-bold text-white">{p.name}</td>
-                        <td className="px-6 py-4 text-xs text-slate-400 font-bold">{p.employee_no || '-'}</td>
-                        <td className="px-6 py-4"><span className={`px - 2 py - 1 rounded - full text - [9px] font - black uppercase ${p.category === PlayerCategory.PREMIUM ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-700 text-slate-400'} `}>{p.category}</span></td>
-                        <td className="px-6 py-4 text-xs text-slate-400 font-bold">{p.gender}</td>
-                        <td className="px-6 py-4 text-xs text-slate-400 font-bold">{p.position || '-'}</td>
-                        <td className="px-6 py-4 text-sm font-black text-indigo-400">{formatCurrency(p.basePrice)}</td>
-                        <td className="px-6 py-4">
-                          {p.isSold ? (
-                            <span className="text-emerald-400 text-xs font-bold uppercase flex items-center gap-1">
-                              <span className="w-1 h-1 bg-emerald-400 rounded-full"></span> Sold
-                            </span>
-                          ) : (
-                            <span className="text-slate-600 text-xs font-bold uppercase">Pending</span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <button onClick={() => handleDeletePlayer(p.id)} className="text-red-400 hover:text-red-300 transition-colors">
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {availablePlayers
+                      .filter(p =>
+                        p.name.toLowerCase().includes(playerSearchQuery.toLowerCase()) ||
+                        (p.employee_no && p.employee_no.toLowerCase().includes(playerSearchQuery.toLowerCase()))
+                      )
+                      .map(p => (
+                        <tr key={p.id} className="hover:bg-slate-800/20 transition-colors">
+                          <td className="px-6 py-4 text-sm font-bold text-white">{p.name}</td>
+                          <td className="px-6 py-4 text-xs text-slate-400 font-bold">{p.employee_no || '-'}</td>
+                          <td className="px-6 py-4"><span className={`px-2 py-1 rounded-full text-[9px] font-black uppercase ${p.category === PlayerCategory.PREMIUM ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-700 text-slate-400'}`}>{p.category}</span></td>
+                          <td className="px-6 py-4 text-xs text-slate-400 font-bold">{p.gender}</td>
+                          <td className="px-6 py-4 text-xs text-slate-400 font-bold">{p.position || '-'}</td>
+                          <td className="px-6 py-4">
+                            <div className="flex flex-wrap gap-1">
+                              {(p.gameIds || '').split(',').filter(id => id).map(id => {
+                                const g = games.find(game => game.id === id);
+                                return g ? (
+                                  <span key={id} className="px-1.5 py-0.5 bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 rounded text-[8px] font-bold">
+                                    {g.name}
+                                  </span>
+                                ) : null;
+                              })}
+                              {(!p.gameIds || p.gameIds === '') && <span className="text-[10px] text-slate-600">-</span>}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 text-sm font-black text-indigo-400">{formatCurrency(p.basePrice)}</td>
+                          <td className="px-6 py-4">
+                            {p.isSold ? (
+                              <span className="text-emerald-400 text-xs font-bold uppercase flex items-center gap-1">
+                                <span className="w-1 h-1 bg-emerald-400 rounded-full"></span> Sold
+                              </span>
+                            ) : (
+                              <span className="text-slate-600 text-xs font-bold uppercase">Pending</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4">
+                            <button onClick={() => handleDeletePlayer(p.id)} className="text-red-400 hover:text-red-300 transition-colors">
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
@@ -901,6 +1125,451 @@ const App: React.FC = () => {
             </div>
           )}
 
+          {activeView === 'fixtures' && (
+            <div className="h-full overflow-y-auto custom-scrollbar space-y-8 animate-in slide-in-from-right-4 duration-500 p-6">
+              <div className="flex justify-between items-end">
+                <div>
+                  <h2 className="text-3xl font-black text-white">Fixtures</h2>
+                  <p className="text-slate-500 text-sm mt-1">Manage and Simulate Matches</p>
+                </div>
+                {isLoggedIn && (
+                  <div className="flex gap-4">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('http://localhost:5001/api/fixtures/generate', { method: 'POST' });
+                          if (res.ok) {
+                            await fetchData();
+                            setMessage("Fixtures Generated!");
+                          } else {
+                            const err = await res.json();
+                            setMessage(err.error || "Generation Failed");
+                          }
+                        } catch (err) {
+                          setMessage("Error Generating Fixtures");
+                        }
+                      }}
+                      className="bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 px-6 py-2 rounded-xl font-bold transition-all text-xs"
+                    >
+                      Gen League
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('http://localhost:5001/api/knockouts/semi-finals/generate', { method: 'POST' });
+                          if (res.ok) {
+                            await fetchData();
+                            setMessage("Semi-Finals Generated!");
+                          } else {
+                            const err = await res.json();
+                            setMessage(err.error || "Generation Failed");
+                          }
+                        } catch (err) {
+                          setMessage("Error Generating Semis");
+                        }
+                      }}
+                      className="bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-500/30 px-6 py-2 rounded-xl font-bold transition-all text-xs"
+                    >
+                      Gen Semis
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('http://localhost:5001/api/knockouts/finals/generate', { method: 'POST' });
+                          if (res.ok) {
+                            await fetchData();
+                            setMessage("Finals Generated!");
+                          } else {
+                            const err = await res.json();
+                            setMessage(err.error || "Generation Failed");
+                          }
+                        } catch (err) {
+                          setMessage("Error Generating Finals");
+                        }
+                      }}
+                      className="bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/30 px-6 py-2 rounded-xl font-bold transition-all text-xs"
+                    >
+                      Gen Final
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch('http://localhost:5001/api/matches/simulate', { method: 'POST' });
+                          if (res.ok) {
+                            await fetchData();
+                            setMessage("Matches Simulated!");
+                          }
+                        } catch (err) {
+                          setMessage("Simulation Failed");
+                        }
+                      }}
+                      className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 px-6 py-2 rounded-xl font-bold transition-all"
+                    >
+                      Simulate All
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm("Clear all matches and reset standings?")) return;
+                        try {
+                          const res = await fetch('http://localhost:5001/api/matches/clear', { method: 'DELETE' });
+                          if (res.ok) {
+                            await fetchData();
+                            setMessage("Matches Cleared!");
+                          }
+                        } catch (err) {
+                          setMessage("Clear Failed");
+                        }
+                      }}
+                      className="bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30 px-6 py-2 rounded-xl font-bold transition-all"
+                    >
+                      Clear All
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {games.map(game => {
+                const gameMatches = matches.filter(m => m.gameId === game.id);
+                const stages: ('league' | 'semi-final' | 'final')[] = ['league', 'semi-final', 'final'];
+
+                return (
+                  <div key={game.id} className="space-y-6">
+                    <div className="flex items-center gap-4">
+                      <div className="h-px flex-1 bg-slate-800"></div>
+                      <h3 className="text-xl font-black text-white uppercase tracking-widest">{game.name}</h3>
+                      <div className="h-px flex-1 bg-slate-800"></div>
+                    </div>
+
+                    {stages.map(stage => {
+                      const stageMatches = gameMatches.filter(m => m.stage === stage);
+                      if (stageMatches.length === 0) return null;
+
+                      return (
+                        <div key={stage} className="space-y-4">
+                          <h4 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] ml-2">
+                            {stage.replace('-', ' ')}
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {stageMatches.map(match => (
+                              <div key={match.id} className="bg-slate-900 border border-slate-800 rounded-3xl p-5 hover:border-slate-700 transition-all">
+                                <div className="flex justify-between items-center mb-4">
+                                  <span className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg ${match.status === 'completed' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+                                    {match.status}
+                                  </span>
+                                </div>
+                                <div className="flex items-center justify-between gap-4 mt-2">
+                                  <div className="flex-1 text-center">
+                                    <p className="text-xs font-bold text-white truncate mb-1">{match.teamA?.name}</p>
+                                    <div className="flex flex-wrap justify-center gap-1 mb-2">
+                                      {availablePlayers
+                                        .filter(p => p.teamId === match.teamAId && p.gameIds?.split(',').includes(match.gameId))
+                                        .map(p => <span key={p.id} className="text-[8px] bg-slate-800 text-slate-400 px-1 py-0.5 rounded">{p.name}</span>)
+                                      }
+                                    </div>
+                                    {match.status === 'completed' && <p className="text-2xl font-black text-white">{match.scoreA}</p>}
+                                  </div>
+                                  <div className="text-slate-700 font-black text-xs">VS</div>
+                                  <div className="flex-1 text-center">
+                                    <p className="text-xs font-bold text-white truncate mb-1">{match.teamB?.name}</p>
+                                    <div className="flex flex-wrap justify-center gap-1 mb-2">
+                                      {availablePlayers
+                                        .filter(p => p.teamId === match.teamBId && p.gameIds?.split(',').includes(match.gameId))
+                                        .map(p => <span key={p.id} className="text-[8px] bg-slate-800 text-slate-400 px-1 py-0.5 rounded">{p.name}</span>)
+                                      }
+                                    </div>
+                                    {match.status === 'completed' && <p className="text-2xl font-black text-white">{match.scoreB}</p>}
+                                  </div>
+                                </div>
+                                {isLoggedIn && match.status === 'scheduled' && (
+                                  <div className="mt-4 pt-4 border-t border-slate-800 flex gap-2">
+                                    <button
+                                      onClick={async () => {
+                                        if (!window.confirm(`Mark ${match.teamA?.name} as winner?`)) return;
+                                        try {
+                                          const res = await fetch(`http://localhost:5001/api/matches/${match.id}/record`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ winnerId: match.teamAId, scoreA: 1, scoreB: 0 })
+                                          });
+                                          if (res.ok) {
+                                            await fetchData();
+                                            setMessage("Result Recorded!");
+                                          }
+                                        } catch (err) {
+                                          setMessage("Update Failed");
+                                        }
+                                      }}
+                                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-white rounded-lg transition-all"
+                                    >
+                                      Team A Wins
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        if (!window.confirm(`Mark as Draw?`)) return;
+                                        try {
+                                          const res = await fetch(`http://localhost:5001/api/matches/${match.id}/record`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ winnerId: 'draw', scoreA: 0, scoreB: 0 })
+                                          });
+                                          if (res.ok) {
+                                            await fetchData();
+                                            setMessage("Result Recorded!");
+                                          }
+                                        } catch (err) {
+                                          setMessage("Update Failed");
+                                        }
+                                      }}
+                                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-slate-400 rounded-lg transition-all"
+                                    >
+                                      Draw
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        if (!window.confirm(`Mark ${match.teamB?.name} as winner?`)) return;
+                                        try {
+                                          const res = await fetch(`http://localhost:5001/api/matches/${match.id}/record`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ winnerId: match.teamBId, scoreA: 0, scoreB: 1 })
+                                          });
+                                          if (res.ok) {
+                                            await fetchData();
+                                            setMessage("Result Recorded!");
+                                          }
+                                        } catch (err) {
+                                          setMessage("Update Failed");
+                                        }
+                                      }}
+                                      className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 text-[10px] font-bold text-white rounded-lg transition-all"
+                                    >
+                                      Team B Wins
+                                    </button>
+                                  </div>
+                                )}
+                                {match.status === 'completed' && (
+                                  <div className="mt-4 pt-4 border-t border-slate-800 text-center">
+                                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
+                                      {match.winnerId === 'draw' ? 'Match Drawn' : `Winner: ${match.winnerId === match.teamAId ? match.teamA?.name : match.teamB?.name}`}
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {gameMatches.length === 0 && (
+                      <p className="text-center text-slate-600 italic text-sm py-4">No fixtures yet.</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {activeView === 'roadmap' && (
+            <div className="h-full overflow-y-auto custom-scrollbar space-y-12 animate-in slide-in-from-right-4 duration-500 p-8 flex flex-col items-center">
+              <div className="text-center w-full max-w-4xl flex justify-between items-end">
+                <div className="text-left">
+                  <h2 className="text-4xl font-black text-white">Championship Roadmap</h2>
+                  <p className="text-slate-500 text-sm mt-2">The Journey to Victory</p>
+                </div>
+                <div className="flex flex-col items-end gap-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Select Game / Sport</label>
+                  <select
+                    className="bg-slate-900 border border-slate-700 rounded-xl px-4 py-2 text-white font-bold outline-none focus:border-indigo-500 transition-colors cursor-pointer"
+                    value={selectedRoadmapGameId || (games[0]?.id || '')}
+                    onChange={(e) => setSelectedRoadmapGameId(e.target.value)}
+                  >
+                    {!selectedRoadmapGameId && games.length > 0 && <option value="">Select Game</option>}
+                    {games.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {(() => {
+                const gameId = selectedRoadmapGameId || games[0]?.id;
+                const game = games.find(g => g.id === gameId);
+                if (!game) return <div className="p-20 text-slate-600 italic">Please select a game to view the roadmap.</div>;
+
+                const gameMatches = matches.filter(m => m.gameId === gameId);
+                const leagueMatches = gameMatches.filter(m => m.stage === 'league');
+                const semiFinals = gameMatches.filter(m => m.stage === 'semi-final');
+                const finalMatch = gameMatches.find(m => m.stage === 'final');
+
+                return (
+                  <div className="w-full max-w-6xl space-y-16 mt-8">
+                    {/* Visual Bracket Structure */}
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-8 items-center relative">
+
+                      {/* Column 1: League Stage Summary */}
+                      <div className="space-y-6">
+                        <div className="flex items-center gap-3 mb-8">
+                          <span className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-xs shadow-lg">1</span>
+                          <h3 className="text-xl font-black text-white uppercase tracking-tighter">League Stage</h3>
+                        </div>
+                        <div className="bg-slate-900/50 border border-slate-800 rounded-3xl p-6 relative group overflow-hidden">
+                          <div className="absolute top-0 left-0 w-1 h-full bg-indigo-600"></div>
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Progress</p>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-2xl font-black text-white">{leagueMatches.filter(m => m.status === 'completed').length} / {leagueMatches.length}</span>
+                            <span className="text-xs font-bold text-indigo-400">Matches</span>
+                          </div>
+                          <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-indigo-500 transition-all duration-1000"
+                              style={{ width: `${(leagueMatches.filter(m => m.status === 'completed').length / (leagueMatches.length || 1)) * 100}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                        {leagueMatches.length > 0 && leagueMatches.every(m => m.status === 'completed') && (
+                          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-center gap-3 animate-pulse">
+                            <span className="text-xl">✅</span>
+                            <p className="text-[10px] font-black text-emerald-400 uppercase tracking-widest leading-tight">League Round Finished.<br />Knockouts Ready!</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Column 2: Semi-Finals */}
+                      <div className="space-y-12">
+                        <div className="flex items-center gap-3 mb-8">
+                          <span className="w-8 h-8 bg-amber-600 rounded-lg flex items-center justify-center text-xs shadow-lg">2</span>
+                          <h3 className="text-xl font-black text-white uppercase tracking-tighter">Semi-Finals</h3>
+                        </div>
+
+                        {/* Semi Final 1 */}
+                        <div className="relative">
+                          <div className={`bg-slate-900 border ${semiFinals[0]?.status === 'completed' ? 'border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.1)]' : 'border-slate-800'} rounded-3xl p-5 relative z-10 hover:border-slate-700 transition-all`}>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-3">Semi Final 1</p>
+                            {semiFinals[0] ? (
+                              <div className="space-y-2">
+                                <div className={`flex justify-between items-center rounded-xl p-2 ${semiFinals[0].winnerId === semiFinals[0].teamAId ? 'bg-amber-500/10' : ''}`}>
+                                  <span className={`text-xs font-bold ${semiFinals[0].winnerId === semiFinals[0].teamAId ? 'text-white' : 'text-slate-500'}`}>{semiFinals[0].teamA?.name || 'TBD'}</span>
+                                  {semiFinals[0].status === 'completed' && <span className="text-xs font-black text-white">{semiFinals[0].scoreA}</span>}
+                                </div>
+                                <div className={`flex justify-between items-center rounded-xl p-2 ${semiFinals[0].winnerId === semiFinals[0].teamBId ? 'bg-amber-500/10' : ''}`}>
+                                  <span className={`text-xs font-bold ${semiFinals[0].winnerId === semiFinals[0].teamBId ? 'text-white' : 'text-slate-500'}`}>{semiFinals[0].teamB?.name || 'TBD'}</span>
+                                  {semiFinals[0].status === 'completed' && <span className="text-xs font-black text-white">{semiFinals[0].scoreB}</span>}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-slate-700 italic py-2">Waiting for standings...</p>
+                            )}
+                          </div>
+                          {/* Connection line to final */}
+                          <div className="hidden lg:block absolute top-1/2 -right-8 w-8 h-px bg-slate-800"></div>
+                        </div>
+
+                        {/* Semi Final 2 */}
+                        <div className="relative">
+                          <div className={`bg-slate-900 border ${semiFinals[1]?.status === 'completed' ? 'border-amber-500/50 shadow-[0_0_20px_rgba(245,158,11,0.1)]' : 'border-slate-800'} rounded-3xl p-5 relative z-10 hover:border-slate-700 transition-all`}>
+                            <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-3">Semi Final 2</p>
+                            {semiFinals[1] ? (
+                              <div className="space-y-2">
+                                <div className={`flex justify-between items-center rounded-xl p-2 ${semiFinals[1].winnerId === semiFinals[1].teamAId ? 'bg-amber-500/10' : ''}`}>
+                                  <span className={`text-xs font-bold ${semiFinals[1].winnerId === semiFinals[1].teamAId ? 'text-white' : 'text-slate-500'}`}>{semiFinals[1].teamA?.name || 'TBD'}</span>
+                                  {semiFinals[1].status === 'completed' && <span className="text-xs font-black text-white">{semiFinals[1].scoreA}</span>}
+                                </div>
+                                <div className={`flex justify-between items-center rounded-xl p-2 ${semiFinals[1].winnerId === semiFinals[1].teamBId ? 'bg-amber-500/10' : ''}`}>
+                                  <span className={`text-xs font-bold ${semiFinals[1].winnerId === semiFinals[1].teamBId ? 'text-white' : 'text-slate-500'}`}>{semiFinals[1].teamB?.name || 'TBD'}</span>
+                                  {semiFinals[1].status === 'completed' && <span className="text-xs font-black text-white">{semiFinals[1].scoreB}</span>}
+                                </div>
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-slate-700 italic py-2">Waiting for standings...</p>
+                            )}
+                          </div>
+                          {/* Connection line to final */}
+                          <div className="hidden lg:block absolute top-1/2 -right-8 w-8 h-px bg-slate-800"></div>
+                        </div>
+                      </div>
+
+                      {/* Column 3: The Grand Final */}
+                      <div className="space-y-8">
+                        <div className="flex items-center gap-3 mb-8">
+                          <span className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center text-xs shadow-lg">3</span>
+                          <h3 className="text-xl font-black text-white uppercase tracking-tighter">Grand Final</h3>
+                        </div>
+                        <div className="relative">
+                          {/* Visual Bracket Connector lines */}
+                          <div className="hidden lg:block absolute -left-8 top-[-50px] bottom-[-50px] w-px bg-slate-800"></div>
+
+                          <div className={`bg-slate-900 border ${finalMatch?.status === 'completed' ? 'border-purple-500/50 shadow-[0_0_40px_rgba(168,85,247,0.2)]' : 'border-slate-800'} rounded-[2.5rem] p-8 relative z-10 hover:border-slate-700 transition-all scale-110`}>
+                            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest text-center mb-6">Championship Match</p>
+                            {finalMatch ? (
+                              <div className="space-y-4">
+                                <div className={`flex flex-col items-center gap-2 rounded-2xl p-4 ${finalMatch.winnerId === finalMatch.teamAId ? 'bg-purple-500/20 border border-purple-500/30' : ''}`}>
+                                  <span className={`text-sm font-black ${finalMatch.winnerId === finalMatch.teamAId ? 'text-white' : 'text-slate-500'}`}>{finalMatch.teamA?.name}</span>
+                                  {finalMatch.status === 'completed' && <span className="text-3xl font-black text-white">{finalMatch.scoreA}</span>}
+                                </div>
+                                <div className="text-center font-black text-xs text-slate-700">VS</div>
+                                <div className={`flex flex-col items-center gap-2 rounded-2xl p-4 ${finalMatch.winnerId === finalMatch.teamBId ? 'bg-purple-500/20 border border-purple-500/30' : ''}`}>
+                                  <span className={`text-sm font-black ${finalMatch.winnerId === finalMatch.teamBId ? 'text-white' : 'text-slate-500'}`}>{finalMatch.teamB?.name}</span>
+                                  {finalMatch.status === 'completed' && <span className="text-3xl font-black text-white">{finalMatch.scoreB}</span>}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="py-10 text-center">
+                                <span className="text-4xl filter grayscale opacity-20">🔥</span>
+                                <p className="text-xs font-bold text-slate-700 mt-4 italic uppercase tracking-widest">Awaiting finalists...</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Column 4: Champion Display */}
+                      <div className="flex flex-col items-center justify-center p-8">
+                        {finalMatch?.status === 'completed' ? (
+                          (() => {
+                            const champion = teams.find(t => t.id === finalMatch.winnerId);
+                            return (
+                              <div className="text-center animate-in zoom-in-50 duration-700">
+                                <div className="relative mb-8">
+                                  <div className="absolute inset-0 bg-amber-500 blur-[60px] opacity-20 animate-pulse"></div>
+                                  <div className="w-48 h-48 bg-gradient-to-br from-amber-400 to-amber-600 rounded-full flex items-center justify-center text-7xl shadow-[0_0_80px_rgba(245,158,11,0.5)] border-8 border-white group relative overflow-hidden">
+                                    <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-full transition-transform duration-1000"></div>
+                                    🏆
+                                  </div>
+                                </div>
+                                <div>
+                                  <p className="text-amber-500 text-sm font-black uppercase tracking-[0.3em] mb-2">Grand Champion</p>
+                                  <h3 className="text-5xl font-black text-white drop-shadow-2xl">{champion?.name}</h3>
+                                  <p className="text-slate-500 text-sm mt-4 font-bold uppercase tracking-widest">{game.name} • {new Date().getFullYear()}</p>
+                                </div>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <div className="text-center opacity-10">
+                            <div className="w-40 h-40 bg-slate-900 border-8 border-slate-800 rounded-full flex items-center justify-center text-6xl">🏆</div>
+                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-6">Awaiting Winner</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* League Standings for this game (Miniature) */}
+                    <div className="mt-12 w-full">
+                      <h4 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.3em] mb-6 ml-4">Current Points Snapshot</h4>
+                      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                        {[...teams].sort((a, b) => (b.points || 0) - (a.points || 0)).map((t, i) => (
+                          <div key={t.id} className="bg-slate-900/30 border border-slate-800/50 rounded-2xl p-4 flex flex-col items-center text-center">
+                            <span className="text-[8px] font-black text-slate-600 uppercase mb-1">Rank {i + 1}</span>
+                            <h5 className="text-xs font-black text-white truncate w-full">{t.name}</h5>
+                            <p className="text-lg font-black text-indigo-500 mt-2">{t.points || 0}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           {activeView === 'standings' && (
             <div className="h-full overflow-y-auto custom-scrollbar space-y-8 animate-in slide-in-from-right-4 duration-500 p-6">
               <div className="flex justify-between items-end">
@@ -908,12 +1577,14 @@ const App: React.FC = () => {
                   <h2 className="text-3xl font-black text-white">Points Table</h2>
                   <p className="text-slate-500 text-sm mt-1">League Standings & Statistics</p>
                 </div>
-                <button
-                  onClick={() => setIsMatchModalOpen(true)}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl font-bold transition-all shadow-lg shadow-emerald-900/40"
-                >
-                  Record Match Result
-                </button>
+                {isLoggedIn && (
+                  <button
+                    onClick={() => setIsMatchModalOpen(true)}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-6 py-2 rounded-xl font-bold transition-all shadow-lg shadow-emerald-900/40"
+                  >
+                    Record Match Result
+                  </button>
+                )}
               </div>
 
               {/* Match Modal */}
@@ -965,20 +1636,20 @@ const App: React.FC = () => {
                           <button
                             onClick={() => setMatchData({ ...matchData, winnerId: matchData.teamAId })}
                             disabled={!matchData.teamAId}
-                            className={`py - 3 rounded - xl font - bold text - xs uppercase ${matchData.winnerId === matchData.teamAId ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} `}
+                            className={`py-3 rounded-xl font-bold text-xs uppercase ${matchData.winnerId === matchData.teamAId ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
                           >
                             {matchData.teamAId ? teams.find(t => t.id === matchData.teamAId)?.name : 'Team A'} Wins
                           </button>
                           <button
                             onClick={() => setMatchData({ ...matchData, winnerId: 'draw' })}
-                            className={`py - 3 rounded - xl font - bold text - xs uppercase ${matchData.winnerId === 'draw' ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} `}
+                            className={`py-3 rounded-xl font-bold text-xs uppercase ${matchData.winnerId === 'draw' ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
                           >
                             Draw
                           </button>
                           <button
                             onClick={() => setMatchData({ ...matchData, winnerId: matchData.teamBId })}
                             disabled={!matchData.teamBId}
-                            className={`py - 3 rounded - xl font - bold text - xs uppercase ${matchData.winnerId === matchData.teamBId ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} `}
+                            className={`py-3 rounded-xl font-bold text-xs uppercase ${matchData.winnerId === matchData.teamBId ? 'bg-indigo-600 text-white ring-2 ring-indigo-400' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}
                           >
                             {matchData.teamBId ? teams.find(t => t.id === matchData.teamBId)?.name : 'Team B'} Wins
                           </button>
@@ -1029,28 +1700,30 @@ const App: React.FC = () => {
                           <td className="px-6 py-4 text-center font-bold text-slate-400">{team.tie || 0}</td>
                           <td className="px-6 py-4 text-center font-bold text-slate-300">{team.nrr?.toFixed(3) || '0.000'}</td>
                           <td className="px-6 py-4 text-center font-black text-xl text-white">{team.points || 0}</td>
-                          <td className="px-6 py-4 text-right">
-                            <button
-                              onClick={() => {
-                                const p = prompt("Enter Matches Played, Won, Lost, Tie, NRR, Points (comma separated)",
-                                  `${team.matchesPlayed || 0},${team.won || 0},${team.lost || 0},${team.tie || 0},${team.nrr || 0},${team.points || 0} `);
-                                if (p) {
-                                  const [mp, w, l, t, nrr, pts] = p.split(',').map(Number);
-                                  if (!isNaN(mp)) {
-                                    api.updateTeam(team.id, { matchesPlayed: mp, won: w, lost: l, tie: t, nrr: nrr, points: pts })
-                                      .then(updated => {
-                                        setTeams(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t));
-                                        setMessage("Stats Updated!");
-                                      })
-                                      .catch(() => setMessage("Update Failed"));
+                          {isLoggedIn && (
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                onClick={() => {
+                                  const p = prompt("Enter Matches Played, Won, Lost, Tie, NRR, Points (comma separated)",
+                                    `${team.matchesPlayed || 0},${team.won || 0},${team.lost || 0},${team.tie || 0},${team.nrr || 0},${team.points || 0} `);
+                                  if (p) {
+                                    const [mp, w, l, t, nrr, pts] = p.split(',').map(Number);
+                                    if (!isNaN(mp)) {
+                                      api.updateTeam(team.id, { matchesPlayed: mp, won: w, lost: l, tie: t, nrr: nrr, points: pts })
+                                        .then(updated => {
+                                          setTeams(prev => prev.map(t => t.id === updated.id ? { ...t, ...updated } : t));
+                                          setMessage("Stats Updated!");
+                                        })
+                                        .catch(() => setMessage("Update Failed"));
+                                    }
                                   }
-                                }
-                              }}
-                              className="text-indigo-400 hover:text-indigo-300 font-bold text-xs uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              Edit
-                            </button>
-                          </td>
+                                }}
+                                className="text-indigo-400 hover:text-indigo-300 font-bold text-xs uppercase tracking-wider opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                Edit
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       ))}
                   </tbody>
@@ -1058,6 +1731,52 @@ const App: React.FC = () => {
                 {teams.length === 0 && (
                   <div className="p-10 text-center text-slate-500 italic">No teams available.</div>
                 )}
+              </div>
+
+              {/* Player Leaderboard */}
+              <div className="space-y-4">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <h2 className="text-2xl font-black text-white">Player Leaderboard</h2>
+                    <p className="text-slate-500 text-sm mt-1">Top Performers by Points</p>
+                  </div>
+                </div>
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800/50 text-slate-400 text-xs font-bold uppercase tracking-wider border-b border-slate-800">
+                        <th className="px-6 py-4">Rank</th>
+                        <th className="px-6 py-4">Player</th>
+                        <th className="px-6 py-4 text-center">Matches</th>
+                        <th className="px-6 py-4 text-center">Points</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800">
+                      {availablePlayers
+                        .filter(p => p.points && p.points > 0)
+                        .sort((a, b) => (b.points || 0) - (a.points || 0))
+                        .slice(0, 10)
+                        .map((p, index) => (
+                          <tr key={p.id} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="px-6 py-4">
+                              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black ${index === 0 ? 'bg-amber-500 text-slate-900' : index === 1 ? 'bg-slate-300 text-slate-900' : index === 2 ? 'bg-amber-700 text-white' : 'bg-slate-800 text-slate-500'}`}>
+                                {index + 1}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <p className="font-bold text-white text-sm">{p.name}</p>
+                              <p className="text-[10px] text-slate-500 uppercase font-black">{teams.find(t => t.id === p.teamId)?.name || 'Unsold'}</p>
+                            </td>
+                            <td className="px-6 py-4 text-center text-sm text-slate-400 font-bold">{p.matchesPlayed || 0}</td>
+                            <td className="px-6 py-4 text-center text-lg text-white font-black">{p.points || 0}</td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                  {availablePlayers.filter(p => p.points && p.points > 0).length === 0 && (
+                    <div className="p-10 text-center text-slate-500 italic">No player stats available yet.</div>
+                  )}
+                </div>
               </div>
             </div>
           )}
