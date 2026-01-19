@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { sequelize } from './db';
-import { Config, Team, Player, Game } from './models';
+import { Config, Team, Player, Game, Match } from './models';
 
 const router = Router();
 
@@ -96,9 +96,19 @@ router.post('/players/import', async (req, res) => {
         position: p.position,
         employee_no: p.employee_no,
         basePrice: p.basePrice,
+        gameIds: p.gameIds,
         isSold: false
     })));
     res.json(created);
+});
+
+router.delete('/players/clear', async (req, res) => {
+    try {
+        await Player.destroy({ where: {} });
+        res.json({ success: true, message: 'All players cleared' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to clear players' });
+    }
 });
 
 router.delete('/players/:id', async (req, res) => {
@@ -147,17 +157,63 @@ router.post('/players/:id/sell', async (req, res) => {
 
 // --- Reset / Seed ---
 router.post('/reset', async (req, res) => {
-    // Clear all data
-    await Player.destroy({ where: {}, truncate: false }); // truncate: true might be faster but check FK constraints
-    await Team.destroy({ where: {}, truncate: false });
+    try {
+        // Clear all data
+        await Player.destroy({ where: {}, truncate: false });
+        await Team.destroy({ where: {}, truncate: false });
 
-    // Seed initial data if requested
-    const { seed } = req.body;
-    if (seed) {
-        // Basic initial seed if needed
+        // Seed initial data if requested
+        const { seed } = req.body;
+        if (seed) {
+            // Seed Teams
+            const teamNames = ['Thunderbolts', 'Strikers', 'Dragons', 'Warriors', 'Titans', 'Kings'];
+            const teams = await Team.bulkCreate(teamNames.map(name => ({
+                name,
+                purse: 10000000,
+                spent: 0,
+                matchesPlayed: 0,
+                won: 0,
+                lost: 0,
+                tie: 0,
+                points: 0,
+                nrr: 0.0
+            })));
+
+            // Seed Players
+            const positions = ['Batsman', 'Bowler', 'All-Rounder', 'Wicket Keeper'];
+            const firstNames = ['Aarav', 'Vihaan', 'Aditya', 'Arjun', 'Sai', 'Rohan', 'Ishaan', 'Zara', 'Diya', 'Ananya', 'Priya', 'Kavya', 'Sanya', 'Myra'];
+            const lastNames = ['Sharma', 'Verma', 'Singh', 'Patel', 'Reddy', 'Kumar', 'Das', 'Gupta', 'Rao', 'Nair'];
+
+            const players = [];
+            const allGames = await Game.findAll();
+            for (let i = 0; i < 40; i++) {
+                const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
+                const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
+                const category = Math.random() > 0.8 ? 'Premium' : 'Standard';
+
+                players.push({
+                    name: `${firstName} ${lastName}`,
+                    category: category,
+                    gender: Math.random() > 0.2 ? 'Male' : 'Female',
+                    position: positions[Math.floor(Math.random() * positions.length)],
+                    employee_no: `EMP${1000 + i}`,
+                    basePrice: category === 'Premium' ? 2000000 : 500000,
+                    gameIds: allGames.length > 0 ? (
+                        [...allGames].sort(() => 0.5 - Math.random())
+                            .slice(0, Math.floor(Math.random() * 3) + 1)
+                            .map(g => g.id)
+                            .join(',')
+                    ) : '',
+                    isSold: false
+                });
+            }
+            await Player.bulkCreate(players);
+        }
+
+        res.json({ success: true, message: seed ? 'Reset and seeded with sample data' : 'Reset successful' });
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
     }
-
-    res.json({ success: true });
 });
 
 router.post('/seed/players', async (req, res) => {
@@ -171,11 +227,21 @@ router.post('/seed/players', async (req, res) => {
         const lastNames = ['Sharma', 'Verma', 'Singh', 'Patel', 'Reddy', 'Kumar', 'Das', 'Gupta', 'Rao', 'Nair'];
 
         const players = [];
+        const allGames = await Game.findAll();
 
         for (let i = 0; i < count; i++) {
             const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
             const lastName = lastNames[Math.floor(Math.random() * lastNames.length)];
             const category = Math.random() > 0.8 ? 'Premium' : 'Standard';
+
+            const gameIdsArr = [];
+            if (allGames.length > 0) {
+                const numGames = Math.floor(Math.random() * Math.min(allGames.length, 3)) + 1;
+                const shuffled = [...allGames].sort(() => 0.5 - Math.random());
+                for (let j = 0; j < numGames; j++) {
+                    gameIdsArr.push(shuffled[j].id);
+                }
+            }
 
             players.push({
                 name: `${firstName} ${lastName}`,
@@ -184,6 +250,7 @@ router.post('/seed/players', async (req, res) => {
                 position: positions[Math.floor(Math.random() * positions.length)],
                 employee_no: `EMP${1000 + i}`,
                 basePrice: category === 'Premium' ? 2000000 : 500000,
+                gameIds: gameIdsArr.join(','),
                 isSold: false
             });
         }
@@ -191,6 +258,90 @@ router.post('/seed/players', async (req, res) => {
         await Player.bulkCreate(players);
         res.json({ success: true, count: players.length, message: `Seeded ${players.length} players` });
 
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/seed/teams', async (req, res) => {
+    try {
+        const teamNames = ['Thunderbolts', 'Strikers', 'Dragons', 'Warriors'];
+        const existingTeams = await Team.findAll();
+        const existingNames = existingTeams.map(t => t.name);
+
+        const teamsToCreate = teamNames
+            .filter(name => !existingNames.includes(name))
+            .map(name => ({
+                name,
+                purse: 10000000,
+                spent: 0,
+                matchesPlayed: 0,
+                won: 0,
+                lost: 0,
+                tie: 0,
+                points: 0,
+                nrr: 0.0
+            }));
+
+        if (teamsToCreate.length === 0) {
+            return res.json({ success: true, message: 'All sample teams already exist' });
+        }
+
+        const created = await Team.bulkCreate(teamsToCreate);
+        res.json({ success: true, count: created.length, message: `Seeded ${created.length} teams` });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete('/teams/clear', async (req, res) => {
+    try {
+        await Team.destroy({ where: {}, truncate: false });
+        res.json({ success: true, message: 'All teams cleared' });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/simulate/auction', async (req, res) => {
+    try {
+        const unsoldPlayers = await Player.findAll({ where: { isSold: false } });
+        const teams = await Team.findAll();
+
+        if (teams.length === 0) {
+            return res.status(400).json({ error: 'No teams available for simulation' });
+        }
+
+        let count = 0;
+        for (const player of unsoldPlayers) {
+            // Pick a random team that can afford the base price
+            const affordableTeams = teams.filter(t => t.purse >= player.basePrice);
+            if (affordableTeams.length === 0) continue;
+
+            const targetTeam = affordableTeams[Math.floor(Math.random() * affordableTeams.length)];
+
+            // Randomly increase price (0 to 10 increments of 50000)
+            const randomIncrements = Math.floor(Math.random() * 11);
+            const finalPrice = player.basePrice + (randomIncrements * 50000);
+
+            // Ensure team can still afford it
+            if (targetTeam.purse < finalPrice) continue;
+
+            await player.update({
+                isSold: true,
+                teamId: targetTeam.id,
+                soldPrice: finalPrice
+            });
+
+            await targetTeam.update({
+                spent: targetTeam.spent + finalPrice,
+                purse: targetTeam.purse - finalPrice
+            });
+
+            count++;
+        }
+
+        res.json({ success: true, message: `Simulated auction for ${count} players` });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -223,6 +374,313 @@ router.delete('/games/:id', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         res.status(400).json({ error: 'Failed to delete game' });
+    }
+});
+
+// --- Matches & Fixtures ---
+router.get('/matches', async (req, res) => {
+    try {
+        const matches = await Match.findAll({
+            include: [
+                { model: Game, as: 'game' },
+                { model: Team, as: 'teamA' },
+                { model: Team, as: 'teamB' }
+            ],
+            order: [['createdAt', 'ASC']]
+        });
+        res.json(matches);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/fixtures/generate', async (req, res) => {
+    try {
+        const teams = await Team.findAll();
+        const games = await Game.findAll();
+
+        if (teams.length < 2) {
+            return res.status(400).json({ error: 'At least 2 teams required to generate fixtures' });
+        }
+
+        const fixtures = [];
+        for (const game of games) {
+            // Simple Round Robin for each game
+            for (let i = 0; i < teams.length; i++) {
+                for (let j = i + 1; j < teams.length; j++) {
+                    fixtures.push({
+                        gameId: game.id,
+                        teamAId: teams[i].id,
+                        teamBId: teams[j].id,
+                        status: 'scheduled' as 'scheduled' | 'completed',
+                        stage: 'league' as 'league' | 'semi-final' | 'final'
+                    });
+                }
+            }
+        }
+
+        if (fixtures.length === 0) {
+            return res.json({ success: true, message: 'No fixtures to generate' });
+        }
+
+        const created = await Match.bulkCreate(fixtures);
+        res.json({ success: true, count: created.length, message: `Generated ${created.length} fixtures` });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/matches/simulate', async (req, res) => {
+    try {
+        const matches = await Match.findAll({
+            where: { status: 'scheduled' },
+            include: [{ model: Game, as: 'game' }]
+        });
+
+        let count = 0;
+        for (const match of matches) {
+            const game = (match as any).game;
+            let scoreA = Math.floor(Math.random() * 5);
+            let scoreB = Math.floor(Math.random() * 5);
+
+            // In knockout stages, ensure we have a winner (no draws)
+            if (match.stage !== 'league' && scoreA === scoreB) {
+                if (Math.random() > 0.5) scoreA++;
+                else scoreB++;
+            }
+
+            let winnerId: string | 'draw' = 'draw';
+            if (scoreA > scoreB) winnerId = match.teamAId;
+            else if (scoreB > scoreA) winnerId = match.teamBId;
+
+            await match.update({
+                scoreA,
+                scoreB,
+                winnerId,
+                status: 'completed'
+            });
+
+            // Update Team Stats
+            const teamA = await Team.findByPk(match.teamAId);
+            const teamB = await Team.findByPk(match.teamBId);
+
+            if (teamA && teamB) {
+                const ptsWin = game.pointsFirst || 2;
+                const ptsDraw = 1;
+
+                const isDraw = winnerId === 'draw';
+
+                await teamA.update({
+                    matchesPlayed: teamA.matchesPlayed + 1,
+                    won: teamA.won + (!isDraw && winnerId === teamA.id ? 1 : 0),
+                    lost: teamA.lost + (!isDraw && winnerId !== teamA.id ? 1 : 0),
+                    tie: teamA.tie + (isDraw ? 1 : 0),
+                    points: teamA.points + (isDraw ? ptsDraw : (winnerId === teamA.id ? ptsWin : 0))
+                });
+
+                await teamB.update({
+                    matchesPlayed: teamB.matchesPlayed + 1,
+                    won: teamB.won + (!isDraw && winnerId === teamB.id ? 1 : 0),
+                    lost: teamB.lost + (!isDraw && winnerId !== teamB.id ? 1 : 0),
+                    tie: teamB.tie + (isDraw ? 1 : 0),
+                    points: teamB.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
+                });
+
+                // Update Player Stats
+                const playersA = await Player.findAll({ where: { teamId: match.teamAId } });
+                const playersB = await Player.findAll({ where: { teamId: match.teamBId } });
+
+                for (const p of playersA) {
+                    await p.update({
+                        matchesPlayed: p.matchesPlayed + 1,
+                        points: p.points + (isDraw ? ptsDraw : (winnerId === teamA.id ? ptsWin : 0))
+                    });
+                }
+                for (const p of playersB) {
+                    await p.update({
+                        matchesPlayed: p.matchesPlayed + 1,
+                        points: p.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
+                    });
+                }
+            }
+
+            count++;
+        }
+
+        res.json({ success: true, message: `Simulated ${count} matches` });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/matches/:id/record', async (req, res) => {
+    const { id } = req.params;
+    const { winnerId, scoreA, scoreB } = req.body;
+
+    try {
+        const match = await Match.findByPk(id, {
+            include: [{ model: Game, as: 'game' }]
+        });
+
+        if (!match) return res.status(404).json({ error: 'Match not found' });
+        if (match.status === 'completed') return res.status(400).json({ error: 'Match already completed' });
+
+        const game = (match as any).game;
+        await match.update({
+            winnerId,
+            scoreA: scoreA || 0,
+            scoreB: scoreB || 0,
+            status: 'completed'
+        });
+
+        // Update Team Stats
+        const teamA = await Team.findByPk(match.teamAId);
+        const teamB = await Team.findByPk(match.teamBId);
+
+        if (teamA && teamB) {
+            const ptsWin = game.pointsFirst || 2;
+            const ptsDraw = 1;
+            const isDraw = winnerId === 'draw';
+
+            await teamA.update({
+                matchesPlayed: teamA.matchesPlayed + 1,
+                won: teamA.won + (!isDraw && winnerId === teamA.id ? 1 : 0),
+                lost: teamA.lost + (!isDraw && winnerId !== teamA.id ? 1 : 0),
+                tie: teamA.tie + (isDraw ? 1 : 0),
+                points: teamA.points + (isDraw ? ptsDraw : (winnerId === teamA.id ? ptsWin : 0))
+            });
+
+            await teamB.update({
+                matchesPlayed: teamB.matchesPlayed + 1,
+                won: teamB.won + (!isDraw && winnerId === teamB.id ? 1 : 0),
+                lost: teamB.lost + (!isDraw && winnerId !== teamB.id ? 1 : 0),
+                tie: teamB.tie + (isDraw ? 1 : 0),
+                points: teamB.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
+            });
+
+            // Update Player Stats
+            const playersA = await Player.findAll({ where: { teamId: match.teamAId } });
+            const playersB = await Player.findAll({ where: { teamId: match.teamBId } });
+
+            for (const p of playersA) {
+                await p.update({
+                    matchesPlayed: p.matchesPlayed + 1,
+                    points: p.points + (isDraw ? ptsDraw : (winnerId === teamA.id ? ptsWin : 0))
+                });
+            }
+            for (const p of playersB) {
+                await p.update({
+                    matchesPlayed: p.matchesPlayed + 1,
+                    points: p.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
+                });
+            }
+        }
+
+        res.json({ success: true, message: 'Match result recorded' });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/knockouts/semi-finals/generate', async (req, res) => {
+    try {
+        const games = await Game.findAll();
+        const teams = await Team.findAll({
+            order: [['points', 'DESC'], ['won', 'DESC']]
+        });
+
+        if (teams.length < 4) {
+            return res.status(400).json({ error: 'At least 4 teams required for Semi-finals' });
+        }
+
+        const top4 = teams.slice(0, 4);
+        const fixtures = [];
+
+        for (const game of games) {
+            // Check if semi-finals already exist for this game
+            const existing = await Match.findOne({ where: { gameId: game.id, stage: 'semi-final' } });
+            if (existing) continue;
+
+            // 1st vs 4th
+            fixtures.push({
+                gameId: game.id,
+                teamAId: top4[0].id,
+                teamBId: top4[3].id,
+                status: 'scheduled' as any,
+                stage: 'semi-final' as any
+            });
+
+            // 2nd vs 3rd
+            fixtures.push({
+                gameId: game.id,
+                teamAId: top4[1].id,
+                teamBId: top4[2].id,
+                status: 'scheduled' as any,
+                stage: 'semi-final' as any
+            });
+        }
+
+        if (fixtures.length === 0) {
+            return res.status(400).json({ error: 'Semi-finals already generated or no games available' });
+        }
+
+        await Match.bulkCreate(fixtures);
+        res.json({ success: true, message: `Generated ${fixtures.length} semi-final matches` });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/knockouts/finals/generate', async (req, res) => {
+    try {
+        const games = await Game.findAll();
+        const fixtures = [];
+
+        for (const game of games) {
+            // Check if finals already exist
+            const existingFinal = await Match.findOne({ where: { gameId: game.id, stage: 'final' } });
+            if (existingFinal) continue;
+
+            // Get winners of semi-finals
+            const semiFinals = await Match.findAll({
+                where: { gameId: game.id, stage: 'semi-final', status: 'completed' }
+            });
+
+            if (semiFinals.length < 2) continue;
+
+            fixtures.push({
+                gameId: game.id,
+                teamAId: semiFinals[0].winnerId!,
+                teamBId: semiFinals[1].winnerId!,
+                status: 'scheduled' as any,
+                stage: 'final' as any
+            });
+        }
+
+        if (fixtures.length === 0) {
+            return res.status(400).json({ error: 'Semi-finals not complete or finals already generated' });
+        }
+
+        await Match.bulkCreate(fixtures);
+        res.json({ success: true, message: `Generated ${fixtures.length} final matches` });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.delete('/matches/clear', async (req, res) => {
+    try {
+        await Match.destroy({ where: {} });
+        await Team.update({
+            matchesPlayed: 0,
+            won: 0,
+            lost: 0,
+            tie: 0,
+            points: 0
+        }, { where: {} });
+        res.json({ success: true, message: 'Matches cleared and standings reset' });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
     }
 });
 

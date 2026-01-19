@@ -13,7 +13,10 @@ export interface PlayerAttributes {
     soldPrice?: number;
     isSold: boolean;
     photoUrl?: string;
+    gameIds?: string; // Comma separated IDs
     teamId?: string | null;
+    matchesPlayed?: number;
+    points?: number;
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -31,7 +34,10 @@ export class Player extends Model<PlayerAttributes, PlayerCreationAttributes> im
     public soldPrice?: number;
     public isSold!: boolean;
     public photoUrl?: string;
+    public gameIds?: string;
     public teamId?: string | null;
+    public matchesPlayed!: number;
+    public points!: number;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -80,13 +86,25 @@ Player.init(
             type: DataTypes.STRING,
             allowNull: true,
         },
+        gameIds: {
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
         teamId: {
             type: DataTypes.UUID,
             allowNull: true,
             references: {
-                model: 'Team', // Name of the table or model? standard sequelize references table names usually
+                model: 'Team',
                 key: 'id',
             },
+        },
+        matchesPlayed: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0,
+        },
+        points: {
+            type: DataTypes.INTEGER,
+            defaultValue: 0,
         },
     },
     {
