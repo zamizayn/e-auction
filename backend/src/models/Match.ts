@@ -6,13 +6,15 @@ import { Game } from './Game';
 export interface MatchAttributes {
     id: string;
     gameId: string;
-    teamAId: string;
-    teamBId: string;
+    teamAId?: string;
+    teamBId?: string;
+    playerAId?: string;
+    playerBId?: string;
     winnerId?: string | 'draw';
     scoreA?: number;
     scoreB?: number;
     status: 'scheduled' | 'completed';
-    stage: 'league' | 'semi-final' | 'final';
+    stage: string; // e.g., 'league', 'semi-final', 'final', 'Round 1', etc.
     createdAt?: Date;
     updatedAt?: Date;
 }
@@ -22,13 +24,15 @@ interface MatchCreationAttributes extends Optional<MatchAttributes, 'id' | 'stat
 export class Match extends Model<MatchAttributes, MatchCreationAttributes> implements MatchAttributes {
     public id!: string;
     public gameId!: string;
-    public teamAId!: string;
-    public teamBId!: string;
+    public teamAId?: string;
+    public teamBId?: string;
+    public playerAId?: string;
+    public playerBId?: string;
     public winnerId?: string | 'draw';
     public scoreA?: number;
     public scoreB?: number;
     public status!: 'scheduled' | 'completed';
-    public stage!: 'league' | 'semi-final' | 'final';
+    public stage!: string;
 
     public readonly createdAt!: Date;
     public readonly updatedAt!: Date;
@@ -51,7 +55,7 @@ Match.init(
         },
         teamAId: {
             type: DataTypes.UUID,
-            allowNull: false,
+            allowNull: true,
             references: {
                 model: 'Team',
                 key: 'id',
@@ -59,9 +63,25 @@ Match.init(
         },
         teamBId: {
             type: DataTypes.UUID,
-            allowNull: false,
+            allowNull: true,
             references: {
                 model: 'Team',
+                key: 'id',
+            },
+        },
+        playerAId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            references: {
+                model: 'Player',
+                key: 'id',
+            },
+        },
+        playerBId: {
+            type: DataTypes.UUID,
+            allowNull: true,
+            references: {
+                model: 'Player',
                 key: 'id',
             },
         },
@@ -82,7 +102,7 @@ Match.init(
             defaultValue: 'scheduled',
         },
         stage: {
-            type: DataTypes.ENUM('league', 'semi-final', 'final'),
+            type: DataTypes.STRING,
             defaultValue: 'league',
         },
     },

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Op } from 'sequelize';
 import { sequelize } from './db';
 import { Config, Team, Player, Game, Match } from './models';
 
@@ -128,16 +129,49 @@ router.post('/players/:id/sell', async (req, res) => {
 
     try {
         const result = await sequelize.transaction(async (t) => {
-            // 1. Get Team
-            const team = await Team.findByPk(teamId, { transaction: t });
-            if (!team) throw new Error('Team not found');
+            // 1. Get Team and Config
+            const [team, config] = await Promise.all([
+                Team.findByPk(teamId, {
+                    transaction: t,
+                    include: [{ model: Player, as: 'players' }]
+                }),
+                Config.findOne({ transaction: t })
+            ]);
 
-            // 2. Update Team
+            if (!team) throw new Error('Team not found');
+            if (!config) throw new Error('System configuration not found');
+
+            // 2. Check Squad Size and Reserved Funds
+            if ((team as any).players && (team as any).players.length >= config.squadSize) {
+                throw new Error(`Team ${team.name} already reached squad size limit of ${config.squadSize}`);
+            }
+
+            const remainingSlots = config.squadSize - ((team as any).players ? (team as any).players.length : 0);
+            let reservedAmount = 0;
+            if (remainingSlots > 1) {
+                const otherUnsoldPlayers = await Player.findAll({
+                    where: { isSold: false, id: { [Op.ne]: id } },
+                    order: [['basePrice', 'ASC']],
+                    limit: remainingSlots - 1,
+                    transaction: t
+                });
+                reservedAmount = otherUnsoldPlayers.reduce((sum, p) => sum + p.basePrice, 0);
+
+                if (otherUnsoldPlayers.length < remainingSlots - 1) {
+                    reservedAmount += (remainingSlots - 1 - otherUnsoldPlayers.length) * 500000;
+                }
+            }
+
+            if (team.purse - soldPrice < reservedAmount) {
+                throw new Error(`Insufficient funds: Must reserve ${reservedAmount} to complete squad with ${remainingSlots - 1} more players`);
+            }
+
+            // 3. Update Team
             team.purse = team.purse - soldPrice;
             team.spent = team.spent + soldPrice;
             await team.save({ transaction: t });
 
-            // 3. Update Player
+            // 4. Update Player
             const player = await Player.findByPk(id, { transaction: t });
             if (!player) throw new Error('Player not found');
 
@@ -305,20 +339,61 @@ router.delete('/teams/clear', async (req, res) => {
 
 router.post('/simulate/auction', async (req, res) => {
     try {
-        const unsoldPlayers = await Player.findAll({ where: { isSold: false } });
-        const teams = await Team.findAll();
+        const [unsoldPlayers, teams, config] = await Promise.all([
+            Player.findAll({ where: { isSold: false } }),
+            Team.findAll({ include: [{ model: Player, as: 'players' }] }),
+            Config.findOne()
+        ]);
 
         if (teams.length === 0) {
             return res.status(400).json({ error: 'No teams available for simulation' });
         }
+        if (!config) {
+            return res.status(400).json({ error: 'Configuration not found' });
+        }
 
         let count = 0;
-        for (const player of unsoldPlayers) {
-            // Pick a random team that can afford the base price
-            const affordableTeams = teams.filter(t => t.purse >= player.basePrice);
-            if (affordableTeams.length === 0) continue;
+        // Make teams a mutable list we can track
+        const teamInMem = teams.map(t => ({
+            id: t.id,
+            purse: t.purse,
+            spent: t.spent,
+            playerCount: (t as any).players ? (t as any).players.length : 0,
+            model: t
+        }));
 
-            const targetTeam = affordableTeams[Math.floor(Math.random() * affordableTeams.length)];
+        // Pre-sort all unsold base prices to make simulation faster
+        const allUnsoldBasePrices = unsoldPlayers.map(p => p.basePrice).sort((a, b) => a - b);
+
+        for (const player of unsoldPlayers) {
+            // Pick a random team that can afford the base price AND has space AND has reserved funds
+            const availableTeams = teamInMem.filter(t => {
+                const canAfford = t.purse >= player.basePrice;
+                const hasSpace = t.playerCount < config.squadSize;
+                const remainingSlots = config.squadSize - t.playerCount;
+
+                let reservedAmount = 0;
+                if (remainingSlots > 1) {
+                    // In simulation, we roughly estimate by taking the cheapest available
+                    // excluding theoretically the 'current' player (though simulation iterates all)
+                    reservedAmount = allUnsoldBasePrices
+                        .filter(bp => bp !== player.basePrice || allUnsoldBasePrices.indexOf(bp) !== allUnsoldBasePrices.lastIndexOf(bp))
+                        .slice(0, remainingSlots - 1)
+                        .reduce((sum, bp) => sum + bp, 0);
+
+                    // Simple fallback if list is too small
+                    if (allUnsoldBasePrices.length < remainingSlots) {
+                        reservedAmount += (remainingSlots - allUnsoldBasePrices.length) * 500000;
+                    }
+                }
+
+                const hasReserve = t.purse - player.basePrice >= reservedAmount;
+                return canAfford && hasSpace && hasReserve;
+            });
+
+            if (availableTeams.length === 0) continue;
+
+            const targetTeam = availableTeams[Math.floor(Math.random() * availableTeams.length)];
 
             // Randomly increase price (0 to 10 increments of 50000)
             const randomIncrements = Math.floor(Math.random() * 11);
@@ -333,10 +408,15 @@ router.post('/simulate/auction', async (req, res) => {
                 soldPrice: finalPrice
             });
 
-            await targetTeam.update({
+            await targetTeam.model.update({
                 spent: targetTeam.spent + finalPrice,
                 purse: targetTeam.purse - finalPrice
             });
+
+            // Update in-memory state for next player in loop
+            targetTeam.purse -= finalPrice;
+            targetTeam.spent += finalPrice;
+            targetTeam.playerCount += 1;
 
             count++;
         }
@@ -384,11 +464,84 @@ router.get('/matches', async (req, res) => {
             include: [
                 { model: Game, as: 'game' },
                 { model: Team, as: 'teamA' },
-                { model: Team, as: 'teamB' }
+                { model: Team, as: 'teamB' },
+                { model: Player, as: 'playerA' },
+                { model: Player, as: 'playerB' }
             ],
             order: [['createdAt', 'ASC']]
         });
         res.json(matches);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+router.post('/tournaments/generate-round', async (req, res) => {
+    const { gameId, playerIds, stageName } = req.body;
+    try {
+        let playersToPair = [];
+
+        if (playerIds && playerIds.length > 0) {
+            // Initial round or explicit players
+            playersToPair = playerIds;
+        } else {
+            // Find winners of the previous round
+            // We need to know what the previous round was. 
+            // For simplicity, let's assume the frontend sends the players or we find the latest completed round.
+            const latestMatches = await Match.findAll({
+                where: { gameId, status: 'completed' },
+                order: [['createdAt', 'DESC']]
+            });
+
+            if (latestMatches.length === 0) {
+                return res.status(400).json({ error: 'No previous round found or no players provided' });
+            }
+
+            const lastStage = latestMatches[0].stage;
+            const winners = latestMatches
+                .filter(m => m.stage === lastStage && m.winnerId && m.winnerId !== 'draw')
+                .map(m => m.winnerId!);
+
+            playersToPair = winners;
+        }
+
+        if (playersToPair.length < 2) {
+            return res.status(400).json({ error: 'Not enough players to generate a round' });
+        }
+
+        // Shuffle players
+        const shuffled = [...playersToPair].sort(() => 0.5 - Math.random());
+        const fixtures = [];
+
+        for (let i = 0; i < shuffled.length; i += 2) {
+            if (i + 1 < shuffled.length) {
+                fixtures.push({
+                    gameId,
+                    playerAId: shuffled[i],
+                    playerBId: shuffled[i + 1],
+                    status: 'scheduled' as any,
+                    stage: stageName || 'Elimination Round'
+                });
+            } else {
+                // Odd number of players, one gets a bye
+                // Create a match where playerB is null and mark as completed with winner A
+                const byeMatch = await Match.create({
+                    gameId,
+                    playerAId: shuffled[i],
+                    winnerId: shuffled[i],
+                    status: 'completed',
+                    stage: stageName || 'Elimination Round',
+                    scoreA: 1,
+                    scoreB: 0
+                });
+            }
+        }
+
+        if (fixtures.length > 0) {
+            await Match.bulkCreate(fixtures);
+        }
+
+        res.json({ success: true, message: `Generated ${fixtures.length} matches and handled byes.` });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
@@ -450,8 +603,8 @@ router.post('/matches/simulate', async (req, res) => {
             }
 
             let winnerId: string | 'draw' = 'draw';
-            if (scoreA > scoreB) winnerId = match.teamAId;
-            else if (scoreB > scoreA) winnerId = match.teamBId;
+            if (scoreA > scoreB) winnerId = (match.teamAId || match.playerAId)!;
+            else if (scoreB > scoreA) winnerId = (match.teamBId || match.playerBId)!;
 
             await match.update({
                 scoreA,
@@ -486,7 +639,7 @@ router.post('/matches/simulate', async (req, res) => {
                     points: teamB.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
                 });
 
-                // Update Player Stats
+                // Update Player Stats for Team
                 const playersA = await Player.findAll({ where: { teamId: match.teamAId } });
                 const playersB = await Player.findAll({ where: { teamId: match.teamBId } });
 
@@ -500,6 +653,26 @@ router.post('/matches/simulate', async (req, res) => {
                     await p.update({
                         matchesPlayed: p.matchesPlayed + 1,
                         points: p.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
+                    });
+                }
+            } else if (match.playerAId) {
+                // Individual Player Match
+                const playerA = await Player.findByPk(match.playerAId);
+                const playerB = match.playerBId ? await Player.findByPk(match.playerBId) : null;
+
+                const ptsWin = game.pointsFirst || 2;
+                const isDraw = winnerId === 'draw';
+
+                if (playerA) {
+                    await playerA.update({
+                        matchesPlayed: playerA.matchesPlayed + 1,
+                        points: playerA.points + (isDraw ? 1 : (winnerId === playerA.id ? ptsWin : 0))
+                    });
+                }
+                if (playerB) {
+                    await playerB.update({
+                        matchesPlayed: playerB.matchesPlayed + 1,
+                        points: playerB.points + (isDraw ? 1 : (winnerId === playerB.id ? ptsWin : 0))
                     });
                 }
             }
@@ -533,9 +706,9 @@ router.post('/matches/:id/record', async (req, res) => {
             status: 'completed'
         });
 
-        // Update Team Stats
-        const teamA = await Team.findByPk(match.teamAId);
-        const teamB = await Team.findByPk(match.teamBId);
+        // Update Stats
+        const teamA = match.teamAId ? await Team.findByPk(match.teamAId) : null;
+        const teamB = match.teamBId ? await Team.findByPk(match.teamBId) : null;
 
         if (teamA && teamB) {
             const ptsWin = game.pointsFirst || 2;
@@ -558,7 +731,7 @@ router.post('/matches/:id/record', async (req, res) => {
                 points: teamB.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
             });
 
-            // Update Player Stats
+            // Update Player Stats for Team
             const playersA = await Player.findAll({ where: { teamId: match.teamAId } });
             const playersB = await Player.findAll({ where: { teamId: match.teamBId } });
 
@@ -572,6 +745,26 @@ router.post('/matches/:id/record', async (req, res) => {
                 await p.update({
                     matchesPlayed: p.matchesPlayed + 1,
                     points: p.points + (isDraw ? ptsDraw : (winnerId === teamB.id ? ptsWin : 0))
+                });
+            }
+        } else if (match.playerAId) {
+            // Individual Player Match
+            const playerA = await Player.findByPk(match.playerAId);
+            const playerB = match.playerBId ? await Player.findByPk(match.playerBId) : null;
+
+            const ptsWin = game.pointsFirst || 2;
+            const isDraw = winnerId === 'draw';
+
+            if (playerA) {
+                await playerA.update({
+                    matchesPlayed: playerA.matchesPlayed + 1,
+                    points: playerA.points + (isDraw ? 1 : (winnerId === playerA.id ? ptsWin : 0))
+                });
+            }
+            if (playerB) {
+                await playerB.update({
+                    matchesPlayed: playerB.matchesPlayed + 1,
+                    points: playerB.points + (isDraw ? 1 : (winnerId === playerB.id ? ptsWin : 0))
                 });
             }
         }

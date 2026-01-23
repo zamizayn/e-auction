@@ -203,37 +203,13 @@ const App: React.FC = () => {
 
     if (team.purse < nextBid) {
       setMessage(`Insufficient funds for ${team.name}!`);
-      return;
-    }
 
-    // Reserve Check: Must have enough for (remaining - 1) players at their base prices
-    const remainingSlots = config.squadSize - team.players.length;
-    let reservedAmount = 0;
-    if (remainingSlots > 1) {
-      const otherUnsoldBasePrices = availablePlayers
-        .filter(p => !p.isSold && p.id !== currentPlayer?.id)
-        .map(p => p.basePrice)
-        .sort((a, b) => a - b);
-
-      reservedAmount = otherUnsoldBasePrices
-        .slice(0, remainingSlots - 1)
-        .reduce((sum, price) => sum + price, 0);
-
-      // Add a fallback if not enough players are available to fill the squad
-      if (otherUnsoldBasePrices.length < remainingSlots - 1) {
-        // This is a theoretically unreachable state if squadSize and totalPlayers are consistent
-        // but it's safe to handle.
-        reservedAmount += (remainingSlots - 1 - otherUnsoldBasePrices.length) * 500000;
-      }
-    }
-
-    if (team.purse - nextBid < reservedAmount) {
-      setMessage(`Must reserve ${formatCurrency(reservedAmount)} for ${remainingSlots - 1} more players!`);
       return;
     }
 
     if (team.players.length >= config.squadSize) {
       setMessage(`Squad full for ${team.name}!`);
+
       return;
     }
 
@@ -373,9 +349,6 @@ const App: React.FC = () => {
   const currentPlayer = selectedPlayerId
     ? availablePlayers.find(p => p.id === selectedPlayerId)
     : availablePlayers.filter(p => !p.isSold)[currentPlayerIndex];
-
-  const allTeamsFull = teams.length > 0 && teams.every(t => t.players.length >= config.squadSize);
-  const isAuctionFinished = !currentPlayer || currentPlayer.isSold || allTeamsFull;
 
   if (!isLoggedIn && !isPublicView) {
     return (
@@ -676,7 +649,7 @@ const App: React.FC = () => {
 
                 {/* STADIUM CENTER STAGE (Left 5/12) */}
                 <div className="col-span-5 flex flex-col min-h-0">
-                  {!isAuctionFinished ? (
+                  {currentPlayer && !currentPlayer.isSold ? (
                     <div className={`flex-1 relative overflow-hidden bg-slate-900 border-2 rounded-[2.5rem] p-8 shadow-2xl flex flex-col justify-center transition-all duration-500 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'border-amber-500/30 ring-4 ring-amber-500/5' : 'border-indigo-500/30 ring-4 ring-indigo-500/5'}`}>
                       <div className={`absolute top-0 right-0 w-48 h-48 blur-[80px] -mr-24 -mt-24 rounded-full opacity-30 ${currentPlayer.category === PlayerCategory.PREMIUM ? 'bg-amber-400' : 'bg-indigo-400'}`}></div>
 
@@ -730,7 +703,7 @@ const App: React.FC = () => {
                     <div className="flex-1 bg-slate-900 border border-slate-800 rounded-[2.5rem] p-12 text-center flex flex-col justify-center items-center">
                       <div className="mb-6 text-6xl">🏁</div>
                       <h2 className="text-3xl font-black text-white mb-2">Auction Finished</h2>
-                      <p className="text-slate-500 font-medium">{allTeamsFull ? "All teams have reached their squad size quota." : "All players have been auctioned or skipped."}</p>
+                      <p className="text-slate-500 font-medium">All players have been auctioned or skipped.</p>
                       <button onClick={() => setActiveView('dashboard')} className="mt-8 px-10 py-4 bg-indigo-600 rounded-2xl font-black uppercase tracking-widest text-xs">Return Dashboard</button>
                     </div>
                   )}
@@ -740,29 +713,10 @@ const App: React.FC = () => {
                 <div className="col-span-7 grid grid-cols-2 gap-4 overflow-hidden min-h-0">
                   {teams.map(team => {
                     const nextBidPrice = currentBidderId ? currentBid + config.incrementValue : currentBid;
+                    const canAfford = team.purse >= nextBidPrice;
                     const isLeader = currentBidderId === team.id;
                     const premiumCount = team.players.filter(p => p.category === PlayerCategory.PREMIUM).length;
                     const femaleCount = team.players.filter(p => p.gender === Gender.FEMALE).length;
-
-                    // Calculate Spendable Fund
-                    const remainingSlots = config.squadSize - team.players.length;
-                    let reservedAmount = 0;
-                    if (remainingSlots > 1) {
-                      const otherUnsoldBasePrices = availablePlayers
-                        .filter(p => !p.isSold && p.id !== currentPlayer?.id)
-                        .map(p => p.basePrice)
-                        .sort((a, b) => a - b);
-
-                      reservedAmount = otherUnsoldBasePrices
-                        .slice(0, remainingSlots - 1)
-                        .reduce((sum, price) => sum + price, 0);
-
-                      if (otherUnsoldBasePrices.length < remainingSlots - 1) {
-                        reservedAmount += (remainingSlots - 1 - otherUnsoldBasePrices.length) * 500000;
-                      }
-                    }
-                    const spendable = team.purse - reservedAmount;
-                    const canAfford = spendable >= nextBidPrice;
 
                     return (
                       <div key={team.id} className={`flex flex-col rounded-[2.2rem] border transition-all duration-300 min-h-0 overflow-hidden ${isLeader ? 'bg-indigo-600/10 border-indigo-500 ring-4 ring-indigo-500/10' : 'bg-slate-900/50 border-slate-800'}`}>
@@ -779,9 +733,8 @@ const App: React.FC = () => {
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="text-[10px] font-black text-emerald-400">{formatCurrency(team.purse)}</p>
-                            <p className="text-[8px] font-black text-indigo-400">Can Bid: {formatCurrency(spendable)}</p>
-                            <p className="text-[6px] font-black text-slate-600 uppercase tracking-widest">Purse & Limit</p>
+                            <p className="text-xs font-black text-emerald-400">{formatCurrency(team.purse)}</p>
+                            <p className="text-[7px] font-black text-slate-600 uppercase tracking-widest">Available</p>
                           </div>
                         </div>
 
@@ -1837,18 +1790,6 @@ const App: React.FC = () => {
                 </div>
               </div>
             </div>
-          )}
-
-          {activeView === 'tournament' && (
-            <TournamentView
-              games={games}
-              availablePlayers={availablePlayers}
-              matches={matches}
-              selectedGameId={selectedRoadmapGameId}
-              onGameSelect={setSelectedRoadmapGameId}
-              onFetchData={fetchData}
-              onMessage={setMessage}
-            />
           )}
         </div>
       </main>
