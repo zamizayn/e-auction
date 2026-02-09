@@ -1,6 +1,5 @@
 import React from 'react';
-import { Player } from '../types';
-import { Game, Match } from '../App';
+import { Player, Game, Match } from '../types';
 
 interface TournamentViewProps {
     games: Game[];

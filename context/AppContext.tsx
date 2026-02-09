@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Player, Team, AuctionConfig, PlayerCategory, Gender } from '../types';
+import { Player, Team, AuctionConfig, PlayerCategory, Gender, Game, Match } from '../types';
 import { DEFAULT_CONFIG } from '../constants';
 import { api } from '../services/api';
 
@@ -10,10 +10,10 @@ interface AppContextType {
     setTeams: (teams: Team[]) => void;
     availablePlayers: Player[];
     setAvailablePlayers: (players: Player[]) => void;
-    games: any[];
-    setGames: (games: any[]) => void;
-    matches: any[];
-    setMatches: (matches: any[]) => void;
+    games: Game[];
+    setGames: (games: Game[]) => void;
+    matches: Match[];
+    setMatches: (matches: Match[]) => void;
     fetchData: () => Promise<void>;
     message: string;
     setMessage: (msg: string) => void;

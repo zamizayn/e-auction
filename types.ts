@@ -66,4 +66,27 @@ export interface AuctionState {
 export interface Game {
   id: string;
   name: string;
+  type?: string;
+  pointsFirst?: number;
+  pointsSecond?: number;
+  pointsThird?: number;
+}
+
+export interface Match {
+  id: string;
+  gameId: string;
+  teamAId?: string;
+  teamBId?: string;
+  playerAId?: string;
+  playerBId?: string;
+  winnerId?: string | 'draw';
+  scoreA?: number;
+  scoreB?: number;
+  status: 'scheduled' | 'completed';
+  stage: string;
+  game?: Game;
+  teamA?: Team;
+  teamB?: Team;
+  playerA?: Player;
+  playerB?: Player;
 }
