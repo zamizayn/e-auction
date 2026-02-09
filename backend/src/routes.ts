@@ -513,15 +513,20 @@ router.get('/games', async (req, res) => {
 });
 
 router.post('/games', async (req, res) => {
-    const { name, type, pointsFirst, pointsSecond, pointsThird } = req.body;
-    const game = await Game.create({
-        name,
-        type: type || 'Team Match',
-        pointsFirst: pointsFirst || 2,
-        pointsSecond: pointsSecond || 0,
-        pointsThird: pointsThird || 0
-    });
-    res.json(game);
+    const { name, sport, type, pointsFirst, pointsSecond, pointsThird } = req.body;
+    try {
+        const game = await Game.create({
+            name,
+            sport,
+            type,
+            pointsFirst,
+            pointsSecond,
+            pointsThird
+        });
+        res.json(game);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create game' });
+    }
 });
 
 router.delete('/games/:id', async (req, res) => {

@@ -4,6 +4,7 @@ import { sequelize } from '../db';
 export interface GameAttributes {
     id: string;
     name: string;
+    sport: string;
     type: string; // 'Single', 'Team', 'Doubles', 'Mixed Doubles'
     pointsFirst: number;
     pointsSecond: number;
@@ -16,7 +17,8 @@ interface GameCreationAttributes extends Optional<GameAttributes, 'id' | 'points
 export class Game extends Model<GameAttributes, GameCreationAttributes> implements GameAttributes {
     public id!: string;
     public name!: string;
-    public type!: string;
+    public sport!: string; // 'Cricket', 'Football', 'Badminton', etc.
+    public type!: string; // 'Single', 'Team', 'Doubles', 'Mixed Doubles'
     public pointsFirst!: number;
     public pointsSecond!: number;
     public pointsThird!: number;
@@ -34,6 +36,11 @@ Game.init(
         name: {
             type: DataTypes.STRING,
             allowNull: false,
+        },
+        sport: {
+            type: DataTypes.STRING,
+            allowNull: false,
+            defaultValue: 'General'
         },
         type: {
             type: DataTypes.STRING,
@@ -58,6 +65,6 @@ Game.init(
         modelName: 'Game',
         tableName: 'Game',
         timestamps: true,
-        updatedAt: false, // Prisma schema only had createdAt
+        updatedAt: false,
     }
 );

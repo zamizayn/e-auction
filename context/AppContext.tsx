@@ -36,8 +36,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const [config, setConfig] = useState<AuctionConfig>(DEFAULT_CONFIG);
     const [teams, setTeams] = useState<Team[]>([]);
     const [availablePlayers, setAvailablePlayers] = useState<Player[]>([]);
-    const [games, setGames] = useState<any[]>([]);
-    const [matches, setMatches] = useState<any[]>([]);
+    const [games, setGames] = useState<Game[]>([]);
+    const [matches, setMatches] = useState<Match[]>([]);
     const [message, setMessage] = useState<string>('');
 
     const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);

@@ -111,11 +111,11 @@ export const api = {
         return res.json();
     },
 
-    addGame: async (name: string, type?: string, pointsFirst?: number, pointsSecond?: number, pointsThird?: number) => {
+    addGame: async (name: string, sport: string, type?: string, pointsFirst?: number, pointsSecond?: number, pointsThird?: number) => {
         const res = await fetch(`${API_URL}/games`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, type, pointsFirst, pointsSecond, pointsThird })
+            body: JSON.stringify({ name, sport, type, pointsFirst, pointsSecond, pointsThird })
         });
         return res.json();
     },

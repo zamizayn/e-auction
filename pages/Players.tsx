@@ -115,48 +115,114 @@ export const Players: React.FC = () => {
                 </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] p-8 shadow-xl">
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-xl">
                 <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-6 px-2">Manual Entry Form</h3>
-                <div className="flex flex-wrap gap-4">
-                    <input type="text" placeholder="Full Name" className="flex-1 min-w-[200px] bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={newPlayer.name || ''} onChange={e => setNewPlayer({ ...newPlayer, name: e.target.value })} />
-                    <input type="text" placeholder="Emp No" className="w-32 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={newPlayer.employee_no || ''} onChange={e => setNewPlayer({ ...newPlayer, employee_no: e.target.value })} />
-                    <input type="text" placeholder="Position" className="w-40 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={newPlayer.position || ''} onChange={e => setNewPlayer({ ...newPlayer, position: e.target.value })} />
-                    <input type="number" placeholder="Base Price" className="w-40 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all" value={newPlayer.basePrice || ''} onChange={e => setNewPlayer({ ...newPlayer, basePrice: parseInt(e.target.value) || 0 })} />
-                    <select className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold" value={newPlayer.category} onChange={e => setNewPlayer({ ...newPlayer, category: e.target.value as PlayerCategory })}>
-                        <option value={PlayerCategory.STANDARD}>Standard</option>
-                        <option value={PlayerCategory.PREMIUM}>Premium</option>
-                    </select>
-                    <select className="bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold" value={newPlayer.gender} onChange={e => setNewPlayer({ ...newPlayer, gender: e.target.value as Gender })}>
-                        <option value={Gender.MALE}>Male</option>
-                        <option value={Gender.FEMALE}>Female</option>
-                    </select>
 
-                    <div className="flex-1 min-w-[300px] bg-slate-800 border border-slate-700 rounded-xl p-4">
-                        <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-3">Participating Games</p>
-                        <div className="flex flex-wrap gap-2">
-                            {games.map(g => (
-                                <button
-                                    key={g.id}
-                                    onClick={() => {
-                                        const currentIds = (newPlayer.gameIds || '').split(',').filter(id => id);
-                                        const updatedIds = currentIds.includes(g.id)
-                                            ? currentIds.filter(id => id !== g.id)
-                                            : [...currentIds, g.id];
-                                        setNewPlayer({ ...newPlayer, gameIds: updatedIds.join(',') });
-                                    }}
-                                    className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${(newPlayer.gameIds || '').split(',').includes(g.id)
-                                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                                        : 'bg-slate-700 border-slate-600 text-slate-400 hover:bg-slate-600'
-                                        }`}
-                                >
-                                    {g.name}
-                                </button>
-                            ))}
-                            {games.length === 0 && <p className="text-[10px] text-slate-500 italic">No games added yet</p>}
+                <div className="grid grid-cols-12 gap-6">
+                    {/* Row 1: Basic Info */}
+                    <div className="col-span-12 md:col-span-3">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Full Name</label>
+                        <input
+                            type="text"
+                            placeholder="e.g. John Doe"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:font-normal"
+                            value={newPlayer.name || ''}
+                            onChange={e => setNewPlayer({ ...newPlayer, name: e.target.value })}
+                        />
+                    </div>
+                    <div className="col-span-6 md:col-span-2">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Emp ID</label>
+                        <input
+                            type="text"
+                            placeholder="ID-123"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:font-normal"
+                            value={newPlayer.employee_no || ''}
+                            onChange={e => setNewPlayer({ ...newPlayer, employee_no: e.target.value })}
+                        />
+                    </div>
+                    <div className="col-span-6 md:col-span-2">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Position</label>
+                        <input
+                            type="text"
+                            placeholder="Batsman"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:font-normal"
+                            value={newPlayer.position || ''}
+                            onChange={e => setNewPlayer({ ...newPlayer, position: e.target.value })}
+                        />
+                    </div>
+                    <div className="col-span-6 md:col-span-2">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Base Price</label>
+                        <input
+                            type="number"
+                            placeholder="500000"
+                            className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:font-normal"
+                            value={newPlayer.basePrice || ''}
+                            onChange={e => setNewPlayer({ ...newPlayer, basePrice: parseInt(e.target.value) || 0 })}
+                        />
+                    </div>
+                    <div className="col-span-6 md:col-span-3 flex gap-4">
+                        <div className="flex-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Category</label>
+                            <select
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer"
+                                value={newPlayer.category}
+                                onChange={e => setNewPlayer({ ...newPlayer, category: e.target.value as PlayerCategory })}
+                            >
+                                <option value={PlayerCategory.STANDARD}>Standard</option>
+                                <option value={PlayerCategory.PREMIUM}>Premium</option>
+                            </select>
+                        </div>
+                        <div className="flex-1">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Gender</label>
+                            <select
+                                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all appearance-none cursor-pointer"
+                                value={newPlayer.gender}
+                                onChange={e => setNewPlayer({ ...newPlayer, gender: e.target.value as Gender })}
+                            >
+                                <option value={Gender.MALE}>Male</option>
+                                <option value={Gender.FEMALE}>Female</option>
+                            </select>
                         </div>
                     </div>
 
-                    <button onClick={addPlayerManually} className="bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl px-8 py-3 transition-all uppercase tracking-widest text-xs h-[52px]">Add Player</button>
+                    {/* Row 2: Games & Action */}
+                    <div className="col-span-12 md:col-span-9">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Participating Games</label>
+                        <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-wrap gap-2 min-h-[60px]">
+                            {games.map(g => {
+                                const isSelected = (newPlayer.gameIds || '').split(',').includes(g.id);
+                                return (
+                                    <button
+                                        key={g.id}
+                                        onClick={() => {
+                                            const currentIds = (newPlayer.gameIds || '').split(',').filter(id => id);
+                                            const updatedIds = currentIds.includes(g.id)
+                                                ? currentIds.filter(id => id !== g.id)
+                                                : [...currentIds, g.id];
+                                            setNewPlayer({ ...newPlayer, gameIds: updatedIds.join(',') });
+                                        }}
+                                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${isSelected
+                                            ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-500/20'
+                                            : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-300'
+                                            }`}
+                                    >
+                                        {g.name}
+                                    </button>
+                                );
+                            })}
+                            {games.length === 0 && <span className="text-slate-600 text-xs italic">No games configured. Seed or add games first.</span>}
+                        </div>
+                    </div>
+
+                    <div className="col-span-12 md:col-span-3 flex items-end">
+                        <button
+                            onClick={addPlayerManually}
+                            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-xl py-3.5 transition-all uppercase tracking-widest text-xs shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/40 active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4"></path></svg>
+                            Add Player
+                        </button>
+                    </div>
                 </div>
             </div>
 

@@ -66,7 +66,8 @@ export interface AuctionState {
 export interface Game {
   id: string;
   name: string;
-  type?: string;
+  sport: string;
+  type: string;
   pointsFirst?: number;
   pointsSecond?: number;
   pointsThird?: number;
