@@ -43,7 +43,7 @@ export const TournamentView: React.FC<TournamentViewProps> = ({
             return;
         }
         try {
-            const res = await fetch('http://localhost:5001/api/tournaments/generate-round', {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/tournaments/generate-round`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -64,7 +64,7 @@ export const TournamentView: React.FC<TournamentViewProps> = ({
     const handleNextRound = async () => {
         const nextRoundNum = parseInt(String(currentStage).split(' ')[1] || '1') + 1;
         try {
-            const res = await fetch('http://localhost:5001/api/tournaments/generate-round', {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/tournaments/generate-round`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -83,7 +83,7 @@ export const TournamentView: React.FC<TournamentViewProps> = ({
 
     const handleRecordWin = async (matchId: string, winnerId: string, isPlayerA: boolean) => {
         try {
-            const res = await fetch(`http://localhost:5001/api/matches/${matchId}/record`, {
+            const res = await fetch(`${import.meta.env.VITE_API_URL}/matches/${matchId}/record`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

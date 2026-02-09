@@ -34,6 +34,7 @@ export interface Team {
   players: Player[];
 
   logo?: string;
+  captainId?: string;
   matchesPlayed?: number;
   won?: number;
   lost?: number;

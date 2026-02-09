@@ -42,10 +42,12 @@ router.get('/teams', async (req, res) => {
 });
 
 router.post('/teams', async (req, res) => {
-    const { name, purse } = req.body;
+    const { name, purse, logo, captainId } = req.body;
     const team = await Team.create({
         name,
         purse,
+        logo,
+        captainId,
         spent: 0,
         matchesPlayed: 0,
         won: 0,
@@ -61,15 +63,30 @@ router.post('/teams', async (req, res) => {
 
 router.patch('/teams/:id', async (req, res) => {
     const { id } = req.params;
-    const { matchesPlayed, won, lost, tie, points, nrr } = req.body;
+    const { matchesPlayed, won, lost, tie, points, nrr, logo, captainId } = req.body;
     try {
-        await Team.update(
-            { matchesPlayed, won, lost, tie, points, nrr },
-            { where: { id } }
-        );
         const team = await Team.findByPk(id);
-        res.json(team);
+        if (!team) return res.status(404).json({ error: 'Team not found' });
+
+        // If captainId is changing, update the player
+        if (captainId && captainId !== team.captainId) {
+            const player = await Player.findByPk(captainId);
+            if (player) {
+                // If player was already sold or on another team, we might want to handle it
+                // For now, force assign as captain
+                await player.update({
+                    teamId: id,
+                    isSold: true,
+                    soldPrice: player.basePrice // Captains sold at base price
+                });
+            }
+        }
+
+        await team.update({ matchesPlayed, won, lost, tie, points, nrr, logo, captainId });
+        const updatedTeam = await Team.findByPk(id, { include: ['players'] });
+        res.json(updatedTeam);
     } catch (error) {
+        console.error(error);
         res.status(400).json({ error: 'Failed to update team' });
     }
 });
@@ -164,6 +181,35 @@ router.post('/players/:id/sell', async (req, res) => {
 
             if (team.purse - soldPrice < reservedAmount) {
                 throw new Error(`Insufficient funds: Must reserve ${reservedAmount} to complete squad with ${remainingSlots - 1} more players`);
+            }
+
+            // 2b. Mandatory Quota Check
+            const currentPlayers = (team as any).players || [];
+            const currentPremiumCount = currentPlayers.filter((p: any) => p.category === 'Premium').length;
+            const currentFemaleCount = currentPlayers.filter((p: any) => p.gender === 'Female').length;
+            const premiumNeeded = Math.max(0, config.minPremium - currentPremiumCount);
+            const femaleNeeded = Math.max(0, config.minFemale - currentFemaleCount);
+
+            const playerBeingSold = await Player.findByPk(id, { transaction: t });
+            if (!playerBeingSold) throw new Error('Player not found');
+
+            // Block if this player is NOT Premium and we need all remaining slots for Premium
+            if (playerBeingSold.category !== 'Premium' && premiumNeeded >= remainingSlots) {
+                throw new Error(`Team must buy ${premiumNeeded} more Premium players with ${remainingSlots} slots remaining`);
+            }
+
+            // Block if this player is NOT Female and we need all remaining slots for Female
+            if (playerBeingSold.gender !== 'Female' && femaleNeeded >= remainingSlots) {
+                throw new Error(`Team must buy ${femaleNeeded} more Female players with ${remainingSlots} slots remaining`);
+            }
+
+            // Block if buying this player leaves insufficient slots for BOTH quotas
+            const slotsAfterPurchase = remainingSlots - 1;
+            const premiumStillNeeded = playerBeingSold.category === 'Premium' ? premiumNeeded - 1 : premiumNeeded;
+            const femaleStillNeeded = playerBeingSold.gender === 'Female' ? femaleNeeded - 1 : femaleNeeded;
+
+            if (premiumStillNeeded + femaleStillNeeded > slotsAfterPurchase) {
+                throw new Error(`Insufficient slots: Need ${premiumStillNeeded} Premium + ${femaleStillNeeded} Female, but only ${slotsAfterPurchase} slots left`);
             }
 
             // 3. Update Team
@@ -352,13 +398,14 @@ router.post('/simulate/auction', async (req, res) => {
             return res.status(400).json({ error: 'Configuration not found' });
         }
 
-        let count = 0;
         // Make teams a mutable list we can track
         const teamInMem = teams.map(t => ({
             id: t.id,
             purse: t.purse,
             spent: t.spent,
             playerCount: (t as any).players ? (t as any).players.length : 0,
+            premiumCount: (t as any).players ? (t as any).players.filter((p: any) => p.category === 'Premium').length : 0,
+            femaleCount: (t as any).players ? (t as any).players.filter((p: any) => p.gender === 'Female').length : 0,
             model: t
         }));
 
@@ -366,7 +413,7 @@ router.post('/simulate/auction', async (req, res) => {
         const allUnsoldBasePrices = unsoldPlayers.map(p => p.basePrice).sort((a, b) => a - b);
 
         for (const player of unsoldPlayers) {
-            // Pick a random team that can afford the base price AND has space AND has reserved funds
+            // Pick a random team that can afford the base price AND has space AND has reserved funds AND meets quotas
             const availableTeams = teamInMem.filter(t => {
                 const canAfford = t.purse >= player.basePrice;
                 const hasSpace = t.playerCount < config.squadSize;
@@ -388,6 +435,30 @@ router.post('/simulate/auction', async (req, res) => {
                 }
 
                 const hasReserve = t.purse - player.basePrice >= reservedAmount;
+
+                // Quota checks
+                const premiumNeeded = Math.max(0, config.minPremium - t.premiumCount);
+                const femaleNeeded = Math.max(0, config.minFemale - t.femaleCount);
+
+                // Block if this player is NOT Premium and we need all remaining slots for Premium
+                if (player.category !== 'Premium' && premiumNeeded >= remainingSlots) {
+                    return false;
+                }
+
+                // Block if this player is NOT Female and we need all remaining slots for Female
+                if (player.gender !== 'Female' && femaleNeeded >= remainingSlots) {
+                    return false;
+                }
+
+                // Block if buying this player leaves insufficient slots for BOTH quotas
+                const slotsAfterPurchase = remainingSlots - 1;
+                const premiumStillNeeded = player.category === 'Premium' ? premiumNeeded - 1 : premiumNeeded;
+                const femaleStillNeeded = player.gender === 'Female' ? femaleNeeded - 1 : femaleNeeded;
+
+                if (premiumStillNeeded + femaleStillNeeded > slotsAfterPurchase) {
+                    return false;
+                }
+
                 return canAfford && hasSpace && hasReserve;
             });
 
@@ -418,10 +489,16 @@ router.post('/simulate/auction', async (req, res) => {
             targetTeam.spent += finalPrice;
             targetTeam.playerCount += 1;
 
-            count++;
+            // Update quota counts
+            if (player.category === 'Premium') {
+                targetTeam.premiumCount += 1;
+            }
+            if (player.gender === 'Female') {
+                targetTeam.femaleCount += 1;
+            }
         }
 
-        res.json({ success: true, message: `Simulated auction for ${count} players` });
+        res.json({ success: true, message: `Simulated auction for ${unsoldPlayers.length} players` });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

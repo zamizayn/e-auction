@@ -1,6 +1,6 @@
 import { AuctionConfig, Player, Team } from '../types';
 
-const API_URL = 'http://localhost:5001/api';
+const API_URL = import.meta.env.VITE_API_URL;
 
 export const api = {
     login: async (creds: any) => {
@@ -32,11 +32,11 @@ export const api = {
         return res.json();
     },
 
-    addTeam: async (name: string, purse: number): Promise<Team> => {
+    addTeam: async (name: string, purse: number, logo?: string, captainId?: string): Promise<Team> => {
         const res = await fetch(`${API_URL}/teams`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, purse })
+            body: JSON.stringify({ name, purse, logo, captainId })
         });
         return res.json();
     },
@@ -46,6 +46,13 @@ export const api = {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
+        });
+        return res.json();
+    },
+
+    clearTeams: async () => {
+        const res = await fetch(`${API_URL}/teams/clear`, {
+            method: 'DELETE'
         });
         return res.json();
     },

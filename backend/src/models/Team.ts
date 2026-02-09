@@ -7,6 +7,7 @@ export interface TeamAttributes {
     purse: number;
     spent: number;
     logo?: string;
+    captainId?: string;
     matchesPlayed: number;
     won: number;
     lost: number;
@@ -26,6 +27,7 @@ export class Team extends Model<TeamAttributes, TeamCreationAttributes> implemen
     public purse!: number;
     public spent!: number;
     public logo?: string;
+    public captainId?: string;
     public matchesPlayed!: number;
     public won!: number;
     public lost!: number;
@@ -57,7 +59,11 @@ Team.init(
             defaultValue: 0,
         },
         logo: {
-            type: DataTypes.STRING,
+            type: DataTypes.TEXT,
+            allowNull: true,
+        },
+        captainId: {
+            type: DataTypes.UUID,
             allowNull: true,
         },
         matchesPlayed: {
