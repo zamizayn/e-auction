@@ -10,6 +10,8 @@ export interface ConfigAttributes {
     minMale: number;
     totalPurse: number;
     incrementValue: number;
+    defaultBasePrice: number;
+    premiumBasePrice: number;
     activeSport: string;
 }
 
@@ -22,6 +24,8 @@ export class Config extends Model<ConfigAttributes> implements ConfigAttributes 
     public minMale!: number;
     public totalPurse!: number;
     public incrementValue!: number;
+    public defaultBasePrice!: number;
+    public premiumBasePrice!: number;
     public activeSport!: string;
 }
 
@@ -59,6 +63,14 @@ Config.init(
         incrementValue: {
             type: DataTypes.INTEGER,
             defaultValue: 100000,
+        },
+        defaultBasePrice: {
+            type: DataTypes.INTEGER,
+            defaultValue: 500000,
+        },
+        premiumBasePrice: {
+            type: DataTypes.INTEGER,
+            defaultValue: 2000000,
         },
         activeSport: {
             type: DataTypes.STRING,

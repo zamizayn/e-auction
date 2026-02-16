@@ -13,7 +13,7 @@ export const Settings: React.FC = () => {
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
-        const isNumber = ['totalPurse', 'squadSize', 'minPremium', 'minFemale', 'minMale', 'incrementValue', 'maxTeams'].includes(name);
+        const isNumber = ['totalPurse', 'squadSize', 'minPremium', 'minFemale', 'minMale', 'incrementValue', 'maxTeams', 'defaultBasePrice', 'premiumBasePrice'].includes(name);
         setFormData(prev => ({ ...prev, [name]: isNumber ? parseInt(value) || 0 : value }));
     };
 
@@ -61,6 +61,16 @@ export const Settings: React.FC = () => {
                         <div>
                             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 px-1">Minimum Bid Increment</label>
                             <input type="number" name="incrementValue" value={formData.incrementValue} onChange={handleChange} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-bold focus:ring-1 focus:ring-indigo-500 outline-none transition-all" />
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 px-1">Default Base Price</label>
+                            <input type="number" name="defaultBasePrice" value={formData.defaultBasePrice} onChange={handleChange} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-bold focus:ring-1 focus:ring-indigo-500 outline-none transition-all" />
+                        </div>
+
+                        <div>
+                            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 px-1">Premium Base Price</label>
+                            <input type="number" name="premiumBasePrice" value={formData.premiumBasePrice} onChange={handleChange} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white font-bold focus:ring-1 focus:ring-indigo-500 outline-none transition-all" />
                         </div>
                     </div>
 

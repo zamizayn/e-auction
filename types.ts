@@ -51,6 +51,8 @@ export interface AuctionConfig {
   minMale: number;
   totalPurse: number;
   incrementValue: number;
+  defaultBasePrice: number;
+  premiumBasePrice: number;
   activeSport: SportType;
 }
 

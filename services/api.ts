@@ -80,6 +80,15 @@ export const api = {
         return res.json();
     },
 
+    updatePlayer: async (id: string, data: Partial<Player>): Promise<Player> => {
+        const res = await fetch(`${API_URL}/players/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return res.json();
+    },
+
     deletePlayer: async (id: string) => {
         const res = await fetch(`${API_URL}/players/${id}`, {
             method: 'DELETE'

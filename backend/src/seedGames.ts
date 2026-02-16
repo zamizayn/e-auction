@@ -15,15 +15,15 @@ const GAMES_TO_SEED = [
     { name: 'Badminton Doubles', sport: 'Badminton', type: 'Doubles', pointsFirst: 5, pointsSecond: 3, pointsThird: 1 },
     { name: 'Badminton Mixed Doubles', sport: 'Badminton', type: 'Mixed Doubles', pointsFirst: 5, pointsSecond: 3, pointsThird: 1 },
 
-    // Caroms
-    { name: 'Caroms Singles', sport: 'Caroms', type: 'Single', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
-    { name: 'Caroms Doubles', sport: 'Caroms', type: 'Doubles', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
+    // Carroms
+    { name: 'Carroms Singles', sport: 'Carroms', type: 'Single', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
+    { name: 'Carroms Doubles', sport: 'Carroms', type: 'Doubles', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
 
     // Chess
     { name: 'Chess', sport: 'Chess', type: 'Single', pointsFirst: 5, pointsSecond: 3, pointsThird: 1 },
 
     // Snake & Ladder
-    { name: 'Snake & Ladder', sport: 'Snake & Ladder', type: 'Single', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
+    { name: 'Snake & ladder', sport: 'Snake & ladder', type: 'Single', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
 
     // Ludo
     { name: 'Ludo', sport: 'Ludo', type: 'Single', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
@@ -33,6 +33,12 @@ const GAMES_TO_SEED = [
 
     // Dart
     { name: 'Dart', sport: 'Dart', type: 'Single', pointsFirst: 3, pointsSecond: 1, pointsThird: 0 },
+
+    // PES Online
+    { name: 'PES Online', sport: 'PES Online', type: 'Single', pointsFirst: 5, pointsSecond: 3, pointsThird: 1 },
+
+    // Fun Reel
+    { name: 'Fun Reel', sport: 'Fun Reel', type: 'Single', pointsFirst: 5, pointsSecond: 3, pointsThird: 1 },
 ];
 
 async function seedGames() {
@@ -41,7 +47,14 @@ async function seedGames() {
         console.log('--- Seeding Games ---');
 
         for (const g of GAMES_TO_SEED) {
-            const existing = await Game.findOne({ where: { name: g.name } });
+            let existing = await Game.findOne({ where: { name: g.name } });
+
+            // Robust check for Carroms renaming to avoid duplicates
+            if (!existing && g.sport === 'Carroms') {
+                const oldName = g.name.replace('Carroms', 'Caroms');
+                existing = await Game.findOne({ where: { name: oldName } });
+            }
+
             if (!existing) {
                 await Game.create(g);
                 console.log(`Created: ${g.name}`);

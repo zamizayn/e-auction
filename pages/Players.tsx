@@ -6,7 +6,7 @@ import ImportPlayers from '../components/ImportPlayers';
 import { formatCurrency } from '../utils';
 
 export const Players: React.FC = () => {
-    const { availablePlayers, games, setAvailablePlayers, fetchData, setMessage } = useAppContext();
+    const { availablePlayers, games, config, setAvailablePlayers, fetchData, setMessage } = useAppContext();
     const [playerSearchQuery, setPlayerSearchQuery] = useState('');
     const [newPlayer, setNewPlayer] = useState<Partial<Player>>({
         category: PlayerCategory.STANDARD,
@@ -29,7 +29,11 @@ export const Players: React.FC = () => {
             return;
         }
         try {
-            const added = await api.addPlayer(newPlayer);
+            const playerToAdd = {
+                ...newPlayer,
+                basePrice: newPlayer.basePrice || config.defaultBasePrice
+            };
+            const added = await api.addPlayer(playerToAdd);
             setAvailablePlayers([...availablePlayers, added]);
             setNewPlayer({ category: PlayerCategory.STANDARD, gender: Gender.MALE });
             setMessage("Player Added!");
@@ -154,7 +158,7 @@ export const Players: React.FC = () => {
                         <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">Base Price</label>
                         <input
                             type="number"
-                            placeholder="500000"
+                            placeholder={newPlayer.category === PlayerCategory.PREMIUM ? config.premiumBasePrice.toString() : config.defaultBasePrice.toString()}
                             className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white font-bold outline-none focus:ring-2 focus:ring-indigo-500 transition-all placeholder:font-normal"
                             value={newPlayer.basePrice || ''}
                             onChange={e => setNewPlayer({ ...newPlayer, basePrice: parseInt(e.target.value) || 0 })}
@@ -259,9 +263,14 @@ export const Players: React.FC = () => {
                                 <td className="px-6 py-4 text-slate-400 text-xs font-bold">{p.position || '-'}</td>
                                 <td className="px-6 py-4">
                                     <div className="flex flex-wrap gap-1 max-w-[200px]">
-                                        {(p.gameIds || '').split(',').filter(id => id).map(id => (
-                                            <span key={id} className="px-1.5 py-0.5 bg-slate-800 rounded text-[8px] font-bold text-slate-500 border border-slate-700">
-                                                {games.find(g => g.id === id)?.name || 'Game'}
+                                        {Array.from(new Set(
+                                            (p.gameIds || '').split(',')
+                                                .filter(id => id)
+                                                .map(id => games.find(g => g.id === id)?.sport)
+                                                .filter(Boolean)
+                                        )).map(sportName => (
+                                            <span key={sportName} className="px-1.5 py-0.5 bg-indigo-500/10 rounded text-[10px] font-bold text-indigo-400 border border-indigo-500/20">
+                                                {sportName}
                                             </span>
                                         ))}
                                     </div>
@@ -272,7 +281,33 @@ export const Players: React.FC = () => {
                                         {p.isSold ? 'Sold' : 'Pool'}
                                     </span>
                                 </td>
-                                <td className="px-6 py-4 text-right">
+                                <td className="px-6 py-4 text-right flex items-center justify-end gap-1">
+                                    <button
+                                        onClick={async () => {
+                                            const isPromoting = p.category !== PlayerCategory.PREMIUM;
+                                            const newCategory = isPromoting ? PlayerCategory.PREMIUM : PlayerCategory.STANDARD;
+                                            let updateData: Partial<Player> = { category: newCategory };
+                                            const premiumPrice = config.premiumBasePrice || 2000000;
+
+                                            if (isPromoting && window.confirm(`Promote ${p.name} to Premium? \n\nShould we also update their base price to ${premiumPrice.toLocaleString()}?`)) {
+                                                updateData.basePrice = premiumPrice;
+                                            } else if (!isPromoting && !window.confirm(`Demote ${p.name} to Standard?`)) {
+                                                return;
+                                            }
+
+                                            try {
+                                                await api.updatePlayer(p.id, updateData);
+                                                await fetchData();
+                                                setMessage(`${p.name} updated to ${newCategory}`);
+                                            } catch (err) {
+                                                setMessage("Update failed");
+                                            }
+                                        }}
+                                        className={`p-2 transition-all hover:scale-110 ${p.category === PlayerCategory.PREMIUM ? 'text-amber-500' : 'text-slate-600 hover:text-amber-500/50'}`}
+                                        title={p.category === PlayerCategory.PREMIUM ? "Demote to Standard" : "Promote to Premium"}
+                                    >
+                                        <svg className="w-5 h-5" fill={p.category === PlayerCategory.PREMIUM ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-1.25 1.638-1.902 1.117l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.652.52-2.202-.195-1.902-1.117l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path></svg>
+                                    </button>
                                     <button onClick={() => deletePlayer(p.id)} className="p-2 text-slate-600 hover:text-red-400 transition-colors">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                     </button>

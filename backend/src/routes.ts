@@ -21,6 +21,15 @@ router.get('/config', async (req, res) => {
     if (!config) {
         config = await Config.create();
     }
+    // Ensure new fields have defaults if row existed before column addition
+    if (config.premiumBasePrice === null || config.premiumBasePrice === undefined) {
+        config.premiumBasePrice = 2000000;
+        await config.save();
+    }
+    if (config.defaultBasePrice === null || config.defaultBasePrice === undefined) {
+        config.defaultBasePrice = 500000;
+        await config.save();
+    }
     res.json(config);
 });
 
@@ -129,13 +138,15 @@ router.delete('/players/clear', async (req, res) => {
     }
 });
 
-router.delete('/players/:id', async (req, res) => {
+router.patch('/players/:id', async (req, res) => {
     const { id } = req.params;
     try {
-        await Player.destroy({ where: { id } });
-        res.json({ success: true });
+        const player = await Player.findByPk(id);
+        if (!player) return res.status(404).json({ error: 'Player not found' });
+        await player.update(req.body);
+        res.json(player);
     } catch (error) {
-        res.status(400).json({ error: 'Failed to delete player' });
+        res.status(400).json({ error: 'Failed to update player' });
     }
 });
 
@@ -175,7 +186,7 @@ router.post('/players/:id/sell', async (req, res) => {
                 reservedAmount = otherUnsoldPlayers.reduce((sum, p) => sum + p.basePrice, 0);
 
                 if (otherUnsoldPlayers.length < remainingSlots - 1) {
-                    reservedAmount += (remainingSlots - 1 - otherUnsoldPlayers.length) * 500000;
+                    reservedAmount += (remainingSlots - 1 - otherUnsoldPlayers.length) * config.defaultBasePrice;
                 }
             }
 
@@ -277,7 +288,7 @@ router.post('/reset', async (req, res) => {
                     gender: Math.random() > 0.2 ? 'Male' : 'Female',
                     position: positions[Math.floor(Math.random() * positions.length)],
                     employee_no: `EMP${1000 + i}`,
-                    basePrice: category === 'Premium' ? 2000000 : 500000,
+                    basePrice: category === 'Premium' ? ((await Config.findOne())?.premiumBasePrice || 2000000) : (await Config.findOne())?.defaultBasePrice || 500000,
                     gameIds: allGames.length > 0 ? (
                         [...allGames].sort(() => 0.5 - Math.random())
                             .slice(0, Math.floor(Math.random() * 3) + 1)
@@ -308,6 +319,7 @@ router.post('/seed/players', async (req, res) => {
 
         const players = [];
         const allGames = await Game.findAll();
+        const config = await Config.findOne();
 
         for (let i = 0; i < count; i++) {
             const firstName = firstNames[Math.floor(Math.random() * firstNames.length)];
@@ -329,7 +341,7 @@ router.post('/seed/players', async (req, res) => {
                 gender: genders[Math.floor(Math.random() * genders.length)],
                 position: positions[Math.floor(Math.random() * positions.length)],
                 employee_no: `EMP${1000 + i}`,
-                basePrice: category === 'Premium' ? 2000000 : 500000,
+                basePrice: category === 'Premium' ? (config?.premiumBasePrice || 2000000) : (config?.defaultBasePrice || 500000),
                 gameIds: gameIdsArr.join(','),
                 isSold: false
             });
@@ -430,7 +442,7 @@ router.post('/simulate/auction', async (req, res) => {
 
                     // Simple fallback if list is too small
                     if (allUnsoldBasePrices.length < remainingSlots) {
-                        reservedAmount += (remainingSlots - allUnsoldBasePrices.length) * 500000;
+                        reservedAmount += (remainingSlots - allUnsoldBasePrices.length) * config.defaultBasePrice;
                     }
                 }
 
@@ -466,9 +478,9 @@ router.post('/simulate/auction', async (req, res) => {
 
             const targetTeam = availableTeams[Math.floor(Math.random() * availableTeams.length)];
 
-            // Randomly increase price (0 to 10 increments of 50000)
+            // Randomly increase price (0 to 10 increments)
             const randomIncrements = Math.floor(Math.random() * 11);
-            const finalPrice = player.basePrice + (randomIncrements * 50000);
+            const finalPrice = player.basePrice + (randomIncrements * config.incrementValue);
 
             // Ensure team can still afford it
             if (targetTeam.purse < finalPrice) continue;

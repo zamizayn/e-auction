@@ -14,6 +14,8 @@ export const DEFAULT_CONFIG: AuctionConfig = {
   minMale: 0,
   totalPurse: 100000000,
   incrementValue: 100000,
+  defaultBasePrice: 500000,
+  premiumBasePrice: 2000000,
   activeSport: 'Cricket'
 };
 

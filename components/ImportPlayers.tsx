@@ -8,7 +8,7 @@ interface ImportPlayersProps {
 }
 
 const ImportPlayers: React.FC<ImportPlayersProps> = ({ onImport }) => {
-  const { games } = useAppContext();
+  const { games, config } = useAppContext();
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -22,7 +22,7 @@ const ImportPlayers: React.FC<ImportPlayersProps> = ({ onImport }) => {
       const worksheet = workbook.Sheets[sheetName];
       const data = (window as any).XLSX.utils.sheet_to_json(worksheet);
 
-      const sportColumns = ['Football', 'Cricket', 'French Cricket', 'Badminton', 'Caroms', 'Chess', 'Snake & ladder', 'Ludo', 'Jenga', 'Dart'];
+      const sportColumns = ['Football', 'Cricket', 'French Cricket', 'Badminton', 'Carroms', 'Chess', 'Snake & ladder', 'Ludo', 'Jenga', 'Dart', 'PES Online', 'Fun Reel'];
 
       const importedPlayers: Player[] = data.map((item: any, index: number) => {
         // Normalize keys to lowercase for easier matching
@@ -36,9 +36,22 @@ const ImportPlayers: React.FC<ImportPlayersProps> = ({ onImport }) => {
 
         sportColumns.forEach(sport => {
           const sportKey = sport.toLowerCase();
-          if (normalizedItem[sportKey]) {
-            // Find games matching this sport
-            const matchingGames = games.filter(g => g.sport && g.sport.toLowerCase() === sportKey);
+          // Check for both spellings (Carroms/Caroms) in the sheet
+          let val = normalizedItem[sportKey];
+          if (sportKey === 'carroms' && !val) {
+            val = normalizedItem['caroms'];
+          }
+
+          if (val && String(val).trim().toLowerCase() === 'yes') {
+            // Find games matching this sport (also handle Carroms/Caroms spelling mismatch)
+            const matchingGames = games.filter(g => {
+              if (!g.sport) return false;
+              const gSport = g.sport.toLowerCase();
+              if (sportKey === 'carroms') {
+                return gSport === 'carroms' || gSport === 'caroms';
+              }
+              return gSport === sportKey;
+            });
             matchingGames.forEach(g => playerGameIds.push(g.id));
           }
         });
@@ -56,16 +69,19 @@ const ImportPlayers: React.FC<ImportPlayersProps> = ({ onImport }) => {
         const categoryVal = getValue(['Category', 'Player Category']);
         const genderVal = getValue(['Gender', 'Sex']);
         const position = getValue(['Position', 'Role']);
-        const basePrice = getValue(['BasePrice', 'Base Price', 'Price']);
+        const rawPriceValue = getValue(['BasePrice', 'Base Price', 'Price']);
+        const price = parseInt(rawPriceValue);
+        const category = categoryVal === 'Premium' ? PlayerCategory.PREMIUM : PlayerCategory.STANDARD;
+        const finalBasePrice = price || (category === PlayerCategory.PREMIUM ? config.premiumBasePrice : config.defaultBasePrice) || 500000;
 
         return {
           id: `imp-${Date.now()}-${index}`,
           name: name,
-          category: categoryVal === 'Premium' ? PlayerCategory.PREMIUM : PlayerCategory.STANDARD,
+          category: category,
           gender: genderVal === 'Female' ? Gender.FEMALE : Gender.MALE,
           position: position,
           employee_no: empNo,
-          basePrice: parseInt(basePrice) || 500000,
+          basePrice: finalBasePrice,
           isSold: false,
           gameIds: playerGameIds.join(',')
         };
