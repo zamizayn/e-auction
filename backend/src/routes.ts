@@ -570,104 +570,101 @@ router.get('/matches', async (req, res) => {
     }
 });
 
-router.post('/tournaments/generate-round', async (req, res) => {
-    const { gameId, playerIds, stageName } = req.body;
+// --- Fixtures & Matches ---
+router.post('/matches', async (req, res) => {
     try {
-        let playersToPair = [];
-
-        if (playerIds && playerIds.length > 0) {
-            // Initial round or explicit players
-            playersToPair = playerIds;
-        } else {
-            // Find winners of the previous round
-            // We need to know what the previous round was. 
-            // For simplicity, let's assume the frontend sends the players or we find the latest completed round.
-            const latestMatches = await Match.findAll({
-                where: { gameId, status: 'completed' },
-                order: [['createdAt', 'DESC']]
-            });
-
-            if (latestMatches.length === 0) {
-                return res.status(400).json({ error: 'No previous round found or no players provided' });
-            }
-
-            const lastStage = latestMatches[0].stage;
-            const winners = latestMatches
-                .filter(m => m.stage === lastStage && m.winnerId && m.winnerId !== 'draw')
-                .map(m => m.winnerId!);
-
-            playersToPair = winners;
-        }
-
-        if (playersToPair.length < 2) {
-            return res.status(400).json({ error: 'Not enough players to generate a round' });
-        }
-
-        // Shuffle players
-        const shuffled = [...playersToPair].sort(() => 0.5 - Math.random());
-        const fixtures = [];
-
-        for (let i = 0; i < shuffled.length; i += 2) {
-            if (i + 1 < shuffled.length) {
-                fixtures.push({
-                    gameId,
-                    playerAId: shuffled[i],
-                    playerBId: shuffled[i + 1],
-                    status: 'scheduled' as any,
-                    stage: stageName || 'Elimination Round'
-                });
-            } else {
-                // Odd number of players, one gets a bye
-                // Create a match where playerB is null and mark as completed with winner A
-                const byeMatch = await Match.create({
-                    gameId,
-                    playerAId: shuffled[i],
-                    winnerId: shuffled[i],
-                    status: 'completed',
-                    stage: stageName || 'Elimination Round',
-                    scoreA: 1,
-                    scoreB: 0
-                });
-            }
-        }
-
-        if (fixtures.length > 0) {
-            await Match.bulkCreate(fixtures);
-        }
-
-        res.json({ success: true, message: `Generated ${fixtures.length} matches and handled byes.` });
+        const { gameId, teamAId, teamBId, playerAId, playerBId, stage, status } = req.body;
+        const match = await Match.create({
+            gameId,
+            teamAId,
+            teamBId,
+            playerAId,
+            playerBId,
+            stage: stage || 'league',
+            status: status || 'scheduled'
+        });
+        const fullMatch = await Match.findByPk(match.id, {
+            include: ['game', 'teamA', 'teamB', 'playerA', 'playerB']
+        });
+        res.json(fullMatch);
     } catch (err: any) {
-        res.status(500).json({ error: err.message });
+        res.status(400).json({ error: err.message });
+    }
+});
+
+router.put('/matches/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await Match.update(req.body, { where: { id } });
+        const updated = await Match.findByPk(id, {
+            include: ['game', 'teamA', 'teamB', 'playerA', 'playerB']
+        });
+        res.json(updated);
+    } catch (err: any) {
+        res.status(400).json({ error: err.message });
+    }
+});
+
+router.delete('/matches/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await Match.destroy({ where: { id } });
+        res.json({ success: true });
+    } catch (err: any) {
+        res.status(400).json({ error: err.message });
     }
 });
 
 router.post('/fixtures/generate', async (req, res) => {
     try {
-        const teams = await Team.findAll();
         const games = await Game.findAll();
-
-        if (teams.length < 2) {
-            return res.status(400).json({ error: 'At least 2 teams required to generate fixtures' });
-        }
+        const players = await Player.findAll({ where: { isSold: true } });
+        const teams = await Team.findAll();
 
         const fixtures = [];
+
         for (const game of games) {
-            // Simple Round Robin for each game
-            for (let i = 0; i < teams.length; i++) {
-                for (let j = i + 1; j < teams.length; j++) {
-                    fixtures.push({
-                        gameId: game.id,
-                        teamAId: teams[i].id,
-                        teamBId: teams[j].id,
-                        status: 'scheduled' as 'scheduled' | 'completed',
-                        stage: 'league' as 'league' | 'semi-final' | 'final'
-                    });
+            if (game.type === 'Team Match' || game.type === 'Team') {
+                // Team vs Team
+                // Find teams that have players for this game
+                const teamIds = new Set(
+                    players.filter(p => p.gameIds?.includes(game.id))
+                        .map(p => p.teamId)
+                        .filter(id => id)
+                );
+                const participatingTeams = Array.from(teamIds);
+
+                for (let i = 0; i < participatingTeams.length; i++) {
+                    for (let j = i + 1; j < participatingTeams.length; j++) {
+                        fixtures.push({
+                            gameId: game.id,
+                            teamAId: participatingTeams[i]!,
+                            teamBId: participatingTeams[j]!,
+                            status: 'scheduled' as any,
+                            stage: 'league'
+                        });
+                    }
+                }
+            } else {
+                // Individual vs Individual
+                const participatingPlayers = players.filter(p => p.gameIds?.split(',').includes(game.id));
+
+                for (let i = 0; i < participatingPlayers.length; i++) {
+                    for (let j = i + 1; j < participatingPlayers.length; j++) {
+                        fixtures.push({
+                            gameId: game.id,
+                            playerAId: participatingPlayers[i].id,
+                            playerBId: participatingPlayers[j].id,
+                            status: 'scheduled' as any,
+                            stage: 'league'
+                        });
+                    }
                 }
             }
         }
 
         if (fixtures.length === 0) {
-            return res.json({ success: true, message: 'No fixtures to generate' });
+            return res.json({ success: true, count: 0, message: 'No matches to generate' });
         }
 
         const created = await Match.bulkCreate(fixtures);

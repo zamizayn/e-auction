@@ -48,16 +48,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     const fetchData = async () => {
         try {
-            const [configData, teamsData, playersData, gamesData] = await Promise.all([
+            const [configData, teamsData, playersData, gamesData, matchesData] = await Promise.all([
                 api.getConfig(),
                 api.getTeams(),
                 api.getPlayers(),
-                api.getGames()
+                api.getGames(),
+                api.getMatches()
             ]);
             setConfig(configData);
             setTeams(teamsData);
             setAvailablePlayers(playersData);
             setGames(gamesData);
+            setMatches(matchesData);
         } catch (err) {
             console.error('Failed to fetch data:', err);
             setMessage('Failed to refresh data');

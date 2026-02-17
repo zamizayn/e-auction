@@ -135,5 +135,52 @@ export const api = {
         });
         if (!res.ok) throw new Error('Failed to delete game');
         return res.json();
+    },
+
+    // --- Matches & Fixtures ---
+    getMatches: async (): Promise<any[]> => {
+        const res = await fetch(`${API_URL}/matches`);
+        return res.json();
+    },
+
+    addMatch: async (matchData: any): Promise<any> => {
+        const res = await fetch(`${API_URL}/matches`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(matchData)
+        });
+        return res.json();
+    },
+
+    updateMatch: async (id: string, data: any): Promise<any> => {
+        const res = await fetch(`${API_URL}/matches/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        return res.json();
+    },
+
+    deleteMatch: async (id: string) => {
+        const res = await fetch(`${API_URL}/matches/${id}`, {
+            method: 'DELETE'
+        });
+        return res.json();
+    },
+
+    generateFixtures: async (): Promise<any> => {
+        const res = await fetch(`${API_URL}/fixtures/generate`, {
+            method: 'POST'
+        });
+        return res.json();
+    },
+
+    recordMatchResult: async (id: string, result: { winnerId: string | 'draw', scoreA: number, scoreB: number }): Promise<any> => {
+        const res = await fetch(`${API_URL}/matches/${id}/record`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(result)
+        });
+        return res.json();
     }
 };

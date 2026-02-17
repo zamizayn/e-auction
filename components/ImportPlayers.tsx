@@ -22,7 +22,10 @@ const ImportPlayers: React.FC<ImportPlayersProps> = ({ onImport }) => {
       const worksheet = workbook.Sheets[sheetName];
       const data = (window as any).XLSX.utils.sheet_to_json(worksheet);
 
-      const sportColumns = ['Football', 'Cricket', 'French Cricket', 'Badminton', 'Carroms', 'Chess', 'Snake & ladder', 'Ludo', 'Jenga', 'Dart', 'PES Online', 'Fun Reel'];
+      // Dynamic mapping: Use actual game names and sports from the system
+      const allGameNames = games.map(g => g.name);
+      const allSports = Array.from(new Set(games.map(g => g.sport)));
+      const possibleColumns = Array.from(new Set([...allGameNames, ...allSports]));
 
       const importedPlayers: Player[] = data.map((item: any, index: number) => {
         // Normalize keys to lowercase for easier matching
@@ -31,28 +34,23 @@ const ImportPlayers: React.FC<ImportPlayersProps> = ({ onImport }) => {
           normalizedItem[key.trim().toLowerCase()] = item[key];
         });
 
-        // Map sports columns to game IDs
-        const playerGameIds: string[] = [];
+        // Map sports/games columns to game IDs
+        const playerGameIds: Set<string> = new Set();
 
-        sportColumns.forEach(sport => {
-          const sportKey = sport.toLowerCase();
-          // Check for both spellings (Carroms/Caroms) in the sheet
-          let val = normalizedItem[sportKey];
-          if (sportKey === 'carroms' && !val) {
-            val = normalizedItem['caroms'];
-          }
+        possibleColumns.forEach(colName => {
+          const colKey = colName.toLowerCase();
+          const val = normalizedItem[colKey];
 
           if (val && String(val).trim().toLowerCase() === 'yes') {
-            // Find games matching this sport (also handle Carroms/Caroms spelling mismatch)
-            const matchingGames = games.filter(g => {
-              if (!g.sport) return false;
-              const gSport = g.sport.toLowerCase();
-              if (sportKey === 'carroms') {
-                return gSport === 'carroms' || gSport === 'caroms';
-              }
-              return gSport === sportKey;
-            });
-            matchingGames.forEach(g => playerGameIds.push(g.id));
+            // Priority 1: Exact game name match
+            const exactGame = games.find(g => g.name.toLowerCase() === colKey);
+            if (exactGame) {
+              playerGameIds.add(exactGame.id);
+            } else {
+              // Priority 2: Sport-level match (add all games for this sport)
+              const sportGames = games.filter(g => g.sport.toLowerCase() === colKey);
+              sportGames.forEach(g => playerGameIds.add(g.id));
+            }
           }
         });
 
@@ -83,7 +81,7 @@ const ImportPlayers: React.FC<ImportPlayersProps> = ({ onImport }) => {
           employee_no: empNo,
           basePrice: finalBasePrice,
           isSold: false,
-          gameIds: playerGameIds.join(',')
+          gameIds: Array.from(playerGameIds).join(',')
         };
       });
 
